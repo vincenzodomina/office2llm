@@ -10,7 +10,7 @@ Convert Office documents and PDFs into **OCR-friendly, per-page PNGs**.
 - **Python**: 3.10+
 - **LibreOffice**: required for non-PDF inputs (`.docx`, `.pptx`, `.xlsx`, …)
   - The binary must be discoverable as `libreoffice` or `soffice` on `PATH`.
-  - `office2llm` runs LibreOffice with an **isolated user profile** and sets **safe locale defaults**
+  - `office2llm` sets a **writable temporary `HOME`** and **UTF-8 locale defaults** for the subprocess
     to avoid common headless failures in sandboxes/containers (e.g. exit code 77 / “UI language cannot be determined”).
 
 ## Install (recommended: one command)

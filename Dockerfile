@@ -11,9 +11,8 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         libreoffice-core libreoffice-writer libreoffice-calc libreoffice-impress \
         fonts-liberation fonts-noto-core fonts-noto-cjk && \
-    apt-get clean && rm -rf /var/lib/apt/lists/* && \
-    fc-cache -f          
-    # rebuild fontconfig cache
+    fc-cache -f && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY pyproject.toml /app/pyproject.toml

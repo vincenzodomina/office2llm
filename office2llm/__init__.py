@@ -22,8 +22,10 @@ def office_to_pdf(input_path: Path, *, timeout_s: int = 120) -> Path:
         # - UTF-8 locale (prevents exit 77: "UI language cannot be determined")
         env = os.environ.copy()
         env["HOME"] = str(tmpdir)
-        env["LANG"] = env.get("LANG") or "C.UTF-8"
-        env["LC_ALL"] = env.get("LC_ALL") or env["LANG"]
+        if env.get("LANG", "C") in ("", "C", "POSIX"):
+            env["LANG"] = "C.UTF-8"
+        if env.get("LC_ALL", "") in ("", "C", "POSIX"):
+            env["LC_ALL"] = env["LANG"]
 
         subprocess.run(
             [
@@ -31,6 +33,7 @@ def office_to_pdf(input_path: Path, *, timeout_s: int = 120) -> Path:
                 "--headless",
                 "--nologo",
                 "--norestore",
+                "--nolockcheck",
                 "--nofirststartwizard",
                 "--convert-to",
                 "pdf",
@@ -59,9 +62,7 @@ def office_to_pdf(input_path: Path, *, timeout_s: int = 120) -> Path:
 
 def pdf_to_png_pages(pdf_path: Path, *, outdir: Path, dpi: int) -> int:
     outdir.mkdir(parents=True, exist_ok=True)
-    pdf_bytes = pdf_path.read_bytes()
-
-    doc = pdfium.PdfDocument(pdf_bytes)
+    doc = pdfium.PdfDocument(str(pdf_path))
     try:
         n_pages = len(doc)
         if n_pages <= 0:

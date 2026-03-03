@@ -16,7 +16,7 @@ wheels/
 .DS_Store
 .vscode
 node_modules/
-aidl.egg-info/
+office2llm.egg-info/
 
 **/dist/
 **/*.egg-info/

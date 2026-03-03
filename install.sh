@@ -58,7 +58,7 @@ install_libreoffice_macos() {
     return 0
   fi
 
-if have brew; then
+  if have brew; then
     say "Installing LibreOffice via Homebrew..."
     brew install --cask libreoffice
   else
