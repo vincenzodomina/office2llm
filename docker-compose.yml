@@ -1,9 +1,9 @@
 services:
-  office_to_png:
+  office2llm:
     build:
       context: .
     volumes:
       - ./data:/data
     # Run like:
-    #   docker compose run --rm office_to_png --input /data/in.docx --outdir /data/out --dpi 200
-    entrypoint: ["office-to-png"]
+    #   docker compose run --rm office2llm --input /data/in.docx --outdir /data/out --dpi 200
+    entrypoint: ["office2llm"]

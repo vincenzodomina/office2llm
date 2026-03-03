@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# office-to-png installer (macOS + Linux)
+# office2llm installer (macOS + Linux)
 #
 # What this script does:
 # - Installs LibreOffice (required for .docx/.pptx/.xlsx conversions) and common fonts.
@@ -9,22 +9,22 @@ set -euo pipefail
 #   - Linux: uses your system package manager (apt/dnf/yum/pacman/apk)
 # - On Linux, also best-effort ensures Python 3 + venv support exist.
 # - Creates an isolated virtualenv at:
-#     ~/.office-to-png/.venv
-# - Installs this repo's local `office_to_png` package into that venv.
+#     ~/.office2llm/.venv
+# - Installs this repo's local `office2llm` package into that venv.
 # - Symlinks the CLI into:
-#     ~/.local/bin/office-to-png
+#     ~/.local/bin/office2llm
 #
 # How to use:
 # - From the supaclaw repo root:
-#     ./office_to_png/install.sh
+#     ./office2llm/install.sh
 #
 # - Then run:
-#     office-to-png --input /path/to/in.docx --outdir /path/to/out --dpi 200
+#     office2llm --input /path/to/in.docx --outdir /path/to/out --dpi 200
 #
-# If `office-to-png` is not found, add this to your shell rc (~/.zshrc, ~/.bashrc):
+# If `office2llm` is not found, add this to your shell rc (~/.zshrc, ~/.bashrc):
 #   export PATH="$HOME/.local/bin:$PATH"
 
-PREFIX_DIR="${HOME}/.office-to-png"
+PREFIX_DIR="${HOME}/.office2llm"
 VENV_DIR="${PREFIX_DIR}/.venv"
 BIN_DIR="${HOME}/.local/bin"
 
@@ -147,8 +147,8 @@ main() {
       ;;
   esac
 
-  if [[ ! -d "${REPO_ROOT}/office_to_png" ]]; then
-    say "error: expected to find '${REPO_ROOT}/office_to_png'."
+  if [[ ! -d "${REPO_ROOT}/office2llm" ]]; then
+    say "error: expected to find '${REPO_ROOT}/office2llm'."
     say "Run this installer from within the repo checkout."
     exit 1
   fi
@@ -158,22 +158,22 @@ main() {
   python3 -m venv "${VENV_DIR}"
   "${VENV_DIR}/bin/python" -m pip install -U pip >/dev/null
 
-  say "Installing office-to-png from local repo checkout..."
-  "${VENV_DIR}/bin/pip" install -e "${REPO_ROOT}/office_to_png"
+  say "Installing office2llm from local repo checkout..."
+  "${VENV_DIR}/bin/pip" install -e "${REPO_ROOT}/office2llm"
 
   say "Linking binary into ${BIN_DIR}..."
   mkdir -p "${BIN_DIR}"
-  ln -sf "${VENV_DIR}/bin/office-to-png" "${BIN_DIR}/office-to-png"
+  ln -sf "${VENV_DIR}/bin/office2llm" "${BIN_DIR}/office2llm"
 
   say ""
-  say "Installed: ${BIN_DIR}/office-to-png"
+  say "Installed: ${BIN_DIR}/office2llm"
   if ! echo ":$PATH:" | grep -q ":${BIN_DIR}:"; then
     say "Add this to your shell rc if needed:"
     say "  export PATH=\"${BIN_DIR}:\$PATH\""
   fi
   say ""
   say "Try:"
-  say "  office-to-png --input /path/to/in.docx --outdir /path/to/out --dpi 200"
+  say "  office2llm --input /path/to/in.docx --outdir /path/to/out --dpi 200"
 }
 
 main "$@"

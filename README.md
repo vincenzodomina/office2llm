@@ -1,4 +1,4 @@
-# office-to-png
+# office2llm
 
 Convert Office documents and PDFs into **OCR-friendly, per-page PNGs**.
 
@@ -14,16 +14,16 @@ Convert Office documents and PDFs into **OCR-friendly, per-page PNGs**.
 ## Install (recommended: one command)
 
 ```bash
-./office_to_png/install.sh
+./office2llm/install.sh
 ```
 
 This will:
 - install LibreOffice + common fonts (macOS + Linux, best-effort)
-- create a venv at `~/.office-to-png/.venv`
+- create a venv at `~/.office2llm/.venv`
 - install this package into the venv
-- symlink `office-to-png` into `~/.local/bin/office-to-png`
+- symlink `office2llm` into `~/.local/bin/office2llm`
 
-If `office-to-png` is not found afterwards:
+If `office2llm` is not found afterwards:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
@@ -34,13 +34,13 @@ export PATH="$HOME/.local/bin:$PATH"
 Show help:
 
 ```bash
-office-to-png --help
+office2llm --help
 ```
 
 ### Convert an Office file (default output folder)
 
 ```bash
-office-to-png --input /path/to/report.docx
+office2llm --input /path/to/report.docx
 ```
 
 If you omit `--outdir`, outputs go to a sibling folder next to the input named after the input file:
@@ -50,19 +50,19 @@ If you omit `--outdir`, outputs go to a sibling folder next to the input named a
 ### Convert an Office file (custom output folder)
 
 ```bash
-office-to-png --input /path/to/report.pptx --outdir /tmp/report-pages --dpi 200
+office2llm --input /path/to/report.pptx --outdir /tmp/report-pages --dpi 200
 ```
 
 ### Convert a PDF (LibreOffice not used)
 
 ```bash
-office-to-png --input /path/to/file.pdf --outdir ./out --dpi 250
+office2llm --input /path/to/file.pdf --outdir ./out --dpi 250
 ```
 
 ### Tune timeouts (Office → PDF step)
 
 ```bash
-office-to-png --input ./big.xlsx --timeout-s 300
+office2llm --input ./big.xlsx --timeout-s 300
 ```
 
 ## Output
@@ -79,13 +79,13 @@ PNG output is deterministic and “OCR-friendly” (no alpha channel).
 Build + run locally:
 
 ```bash
-docker build -t office-to-png ./office_to_png
-docker run --rm -v "$PWD:/work" office-to-png --input /work/in.docx --outdir /work/out --dpi 200
+docker build -t office2llm ./office2llm
+docker run --rm -v "$PWD:/work" office2llm --input /work/in.docx --outdir /work/out --dpi 200
 ```
 
-Or via the included compose file (uses `./office_to_png/data` mounted to `/data`):
+Or via the included compose file (uses `./office2llm/data` mounted to `/data`):
 
 ```bash
-docker compose -f office_to_png/docker-compose.yml run --rm office_to_png --input /data/in.docx --outdir /data/out --dpi 200
+docker compose -f office2llm/docker-compose.yml run --rm office2llm --input /data/in.docx --outdir /data/out --dpi 200
 ```
 

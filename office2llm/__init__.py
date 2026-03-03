@@ -14,7 +14,7 @@ def office_to_pdf(input_path: Path, *, timeout_s: int = 120) -> Path:
     if not soffice:
         raise RuntimeError("LibreOffice/soffice not found on $PATH")
 
-    tmpdir = Path(tempfile.mkdtemp(prefix="office_to_png_"))
+    tmpdir = Path(tempfile.mkdtemp(prefix="office2llm_"))
     try:
         subprocess.run(
             [

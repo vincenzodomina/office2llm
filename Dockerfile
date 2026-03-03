@@ -15,8 +15,8 @@ RUN apt-get update && \
 
 WORKDIR /app
 COPY pyproject.toml /app/pyproject.toml
-COPY office_to_png /app/office_to_png
+COPY office2llm /app/office2llm
 RUN pip install --no-cache-dir /app
 
-ENTRYPOINT ["office-to-png"]
+ENTRYPOINT ["office2llm"]
 
