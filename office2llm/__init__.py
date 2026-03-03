@@ -1,5 +1,6 @@
 import argparse
 import io
+import os
 import shutil
 import subprocess
 import tempfile
@@ -16,13 +17,21 @@ def office_to_pdf(input_path: Path, *, timeout_s: int = 120) -> Path:
 
     tmpdir = Path(tempfile.mkdtemp(prefix="office2llm_"))
     try:
+        # Sane defaults for sandboxes/containers:
+        # - writable HOME (LibreOffice still writes a user profile even in headless mode)
+        # - UTF-8 locale (prevents exit 77: "UI language cannot be determined")
+        env = os.environ.copy()
+        env["HOME"] = str(tmpdir)
+        env["LANG"] = env.get("LANG") or "C.UTF-8"
+        env["LC_ALL"] = env.get("LC_ALL") or env["LANG"]
+
         subprocess.run(
             [
                 soffice,
                 "--headless",
-                "--safe-mode",
                 "--nologo",
                 "--norestore",
+                "--nofirststartwizard",
                 "--convert-to",
                 "pdf",
                 "--outdir",
@@ -33,18 +42,19 @@ def office_to_pdf(input_path: Path, *, timeout_s: int = 120) -> Path:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=timeout_s,
+            env=env,
         )
+
+        expected = tmpdir / f"{input_path.stem}.pdf"
+        if expected.exists():
+            return expected
+        pdfs = sorted(tmpdir.glob("*.pdf"))
+        if len(pdfs) == 1:
+            return pdfs[0]
+        raise RuntimeError(f"LibreOffice conversion succeeded but no PDF found in {tmpdir}")
     except Exception:
         shutil.rmtree(tmpdir, ignore_errors=True)
         raise
-
-    expected = tmpdir / f"{input_path.stem}.pdf"
-    if expected.exists():
-        return expected
-    pdfs = sorted(tmpdir.glob("*.pdf"))
-    if len(pdfs) == 1:
-        return pdfs[0]
-    raise RuntimeError(f"LibreOffice conversion succeeded but no PDF found in {tmpdir}")
 
 
 def pdf_to_png_pages(pdf_path: Path, *, outdir: Path, dpi: int) -> int:

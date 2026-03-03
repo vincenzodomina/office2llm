@@ -15,8 +15,8 @@ set -euo pipefail
 #     ~/.local/bin/office2llm
 #
 # How to use:
-# - From the supaclaw repo root:
-#     ./office2llm/install.sh
+# - From the office2llm repo root:
+#     ./install.sh
 #
 # - Then run:
 #     office2llm --input /path/to/in.docx --outdir /path/to/out --dpi 200
@@ -29,7 +29,14 @@ VENV_DIR="${PREFIX_DIR}/.venv"
 BIN_DIR="${HOME}/.local/bin"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+if [[ -f "${SCRIPT_DIR}/pyproject.toml" && -d "${SCRIPT_DIR}/office2llm" ]]; then
+  REPO_ROOT="${SCRIPT_DIR}"
+elif [[ -f "${SCRIPT_DIR}/../pyproject.toml" && -d "${SCRIPT_DIR}/../office2llm" ]]; then
+  REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+else
+  printf '%s\n' "error: could not locate repo root (expected pyproject.toml + office2llm/ next to this installer)."
+  exit 1
+fi
 
 say() { printf '%s\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -147,8 +154,8 @@ main() {
       ;;
   esac
 
-  if [[ ! -d "${REPO_ROOT}/office2llm" ]]; then
-    say "error: expected to find '${REPO_ROOT}/office2llm'."
+  if [[ ! -f "${REPO_ROOT}/pyproject.toml" || ! -d "${REPO_ROOT}/office2llm" ]]; then
+    say "error: expected to find '${REPO_ROOT}/pyproject.toml' and '${REPO_ROOT}/office2llm/'."
     say "Run this installer from within the repo checkout."
     exit 1
   fi
@@ -159,7 +166,7 @@ main() {
   "${VENV_DIR}/bin/python" -m pip install -U pip >/dev/null
 
   say "Installing office2llm from local repo checkout..."
-  "${VENV_DIR}/bin/pip" install -e "${REPO_ROOT}/office2llm"
+  "${VENV_DIR}/bin/pip" install -e "${REPO_ROOT}"
 
   say "Linking binary into ${BIN_DIR}..."
   mkdir -p "${BIN_DIR}"
