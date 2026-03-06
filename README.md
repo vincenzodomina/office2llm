@@ -1,13 +1,16 @@
 # office2llm
 
-Convert Office documents and PDFs into **OCR-friendly, per-page PNGs**.
+Convert Office documents and PDFs into **OCR-friendly, per-page PNGs** and **per-page OCR text** for advanced document understanding.
 
 - **Office → PDF**: uses LibreOffice (`libreoffice` / `soffice`) in headless mode
 - **PDF → PNG**: renders pages via `pypdfium2` and writes `page_0001.png`, `page_0002.png`, …
+- **PNG → OCR text**: uses LLM based API to extract text from each page, preserving the document's semantic structure (headers, hierarchy, data relationships, lists, tables).
 
 ## Requirements
 
 - **Python**: 3.10+
+- **Gemini API key**: required for OCR output
+  - Export `GEMINI_API_KEY` before running.
 - **LibreOffice**: required for non-PDF inputs (`.docx`, `.pptx`, `.xlsx`, …)
   - The binary must be discoverable as `libreoffice` or `soffice` on `PATH`.
   - `office2llm` sets a **writable temporary `HOME`** and **UTF-8 locale defaults** for the subprocess
@@ -29,6 +32,13 @@ If `office2llm` is not found afterwards:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
+```
+
+## Quick start
+
+```bash
+export GEMINI_API_KEY="your-api-key-here"
+office2llm --input /path/to/report.docx
 ```
 
 ## Usage
@@ -72,6 +82,9 @@ office2llm --input ./big.xlsx --timeout-s 300
 The command writes:
 - `page_0001.png`
 - `page_0002.png`
+- …
+- `page_0001.txt`
+- `page_0002.txt`
 - …
 
 PNG output is deterministic and “OCR-friendly” (no alpha channel).

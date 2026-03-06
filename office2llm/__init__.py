@@ -4,10 +4,92 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import pypdfium2 as pdfium
 from PIL import Image
+
+
+_EXTRACTION_PROMPT = """
+Return the plain text representation of the provided image as if you were reading it naturally. Extract all visible text while preserving the document's semantic structure (headers, hierarchy, data relationships, lists, tables).
+
+Guidelines:
+
+- Reading Order: Follow a logical human reading order (e.g., if there are two distinct columns, process the left column completely before the right, unless the content clearly spans across).
+- Multi-pages: This is likely one page out of several in the document, so be sure to preserve any sentences that come from the previous page, or continue onto the next page, exactly as they are.
+- Empty pages: If there is no text at all that you think you should read, do not return anything
+- Malformed text: If text is blurry or cut off, transcribe exactly what you see; do not hallucinate or auto-complete missing words.
+- Placeholders: Do not use placeholders like `[Signature]` or `[Image]` unless strictly necessary for context.
+- Visuals: Do not describe visual elements (e.g., do not say "There is a logo," "Image of a graph"). Ignore watermarks or noise.
+- Missing text: Ensure no text is missed, including headers, footers, footnotes, references or text in margins, as long as it contains readable information.
+
+Output Format:
+
+- Markdown only for structure: Do not use Markdown for headers (#, ##, ###) or bold text, that is not necessary for the RAG use case.
+- Tables: Represent tables using standard Markdown syntax (`| Header | ... |`). ensure row and column alignment is preserved. If a cell contains multi-line text, flatten it into a single line within the cell.
+- Lists: Use proper Markdown list syntax (`-` for unordered, `1.` for ordered) rather than just newlines.
+- Key-Value Pairs: Extract explicit key-value pairs only when both text elements are visible (e.g., "Invoice #: 12345"). Do not generate artificial keys or labels (such as adding "Category:", "Date:", or "Label:") if that text is not explicitly written in the image. If a value (like a tag or status) appears without a label, transcribe it simply as text on its own line or as a sub-header, preserving the visual hierarchy without adding words.
+- Equations/Math: If present, represent mathematical formulas using LaTeX syntax inside `$ ... $`.
+- Handwriting: Read any natural handwriting and include it.
+- Output ONLY the raw extracted text: Do not include preambles (e.g., "Here is the markdown..."), code block fences (```), or concluding remarks.
+""".strip()
+
+
+def run_ocr(image: bytes | Path) -> str:
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY is required for OCR. Export it and re-run.")
+
+    try:
+        import importlib
+
+        genai = importlib.import_module("google.genai")
+        types = importlib.import_module("google.genai.types")
+    except Exception as e:
+        raise RuntimeError("Missing dependency: google-genai. Reinstall office2llm.") from e
+
+    if isinstance(image, Path):
+        image_bytes = image.read_bytes()
+    else:
+        image_bytes = image
+    mime_type = "image/png"
+
+    client = genai.Client(api_key=api_key)
+    try:
+        model = "gemini-3-flash-preview"
+        delay_s = 1.0
+        for attempt in range(5):
+            try:
+                response: types.GenerateContentResponse = client.models.generate_content(
+                    model=model,
+                    contents=[
+                        types.Content(
+                            role="user",
+                            parts=[
+                                types.Part.from_bytes(
+                                    mime_type=mime_type, data=image_bytes
+                                ),
+                            ],
+                        ),
+                    ],
+                    config=types.GenerateContentConfig(
+                        system_instruction=_EXTRACTION_PROMPT,
+                        thinking_config=types.ThinkingConfig(
+                            thinking_level="HIGH",
+                        ),
+                    ),
+                )
+                return response.text or ""
+            except Exception:
+                if attempt >= 4:
+                    raise
+                time.sleep(delay_s)
+                delay_s = min(delay_s * 2.0, 10.0)
+        return ""
+    finally:
+        client.close()
 
 
 def office_to_pdf(input_path: Path, *, timeout_s: int = 120) -> Path:
@@ -91,7 +173,9 @@ def pdf_to_png_pages(pdf_path: Path, *, outdir: Path, dpi: int) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Convert Office/PDF to per-page PNGs.")
+    ap = argparse.ArgumentParser(
+        description="Convert Office/PDF to per-page PNGs and LLM OCR text."
+    )
     ap.add_argument(
         "--input", required=True, help="Path to input file (docx/pptx/xlsx/pdf/...)."
     )
@@ -100,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
         required=False,
         default=None,
         help=(
-            "Output directory for page_XXXX.png files. "
+            "Output directory for page_XXXX.png and page_XXXX.txt files. "
             "Default: create a sibling folder next to the input named after the input file (e.g. ./foo.docx -> ./foo/)."
         ),
     )
@@ -112,6 +196,9 @@ def main(argv: list[str] | None = None) -> int:
         help="LibreOffice convert timeout seconds.",
     )
     args = ap.parse_args(argv)
+
+    if not os.environ.get("GEMINI_API_KEY"):
+        raise SystemExit("GEMINI_API_KEY is required for OCR output.")
 
     input_path = Path(args.input).expanduser().resolve()
     if not input_path.exists():
@@ -131,8 +218,38 @@ def main(argv: list[str] | None = None) -> int:
             pdf_path = tmp_pdf
 
         pages = pdf_to_png_pages(pdf_path, outdir=outdir, dpi=args.dpi)
-        print(f"ok pages={pages} outdir={outdir}")
-        return 0
+
+        ocr_ok = 0
+        ocr_skipped = 0
+        ocr_failed = 0
+        if pages > 0:
+            max_workers = min(4, pages)
+            with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                futures = {}
+                for i in range(1, pages + 1):
+                    png_path = outdir / f"page_{i:04d}.png"
+                    txt_path = outdir / f"page_{i:04d}.txt"
+                    if txt_path.exists():
+                        ocr_skipped += 1
+                        continue
+                    futures[ex.submit(run_ocr, png_path)] = txt_path
+
+                for fut in as_completed(futures):
+                    txt_path = futures[fut]
+                    try:
+                        text = fut.result()
+                        tmp_path = txt_path.with_suffix(txt_path.suffix + ".tmp")
+                        tmp_path.write_text(text or "", encoding="utf-8")
+                        tmp_path.replace(txt_path)
+                        ocr_ok += 1
+                    except Exception as e:
+                        ocr_failed += 1
+                        print(f"ocr failed file={txt_path.name} err={e}")
+
+        print(
+            f"ok pages={pages} ocr_ok={ocr_ok} ocr_skipped={ocr_skipped} ocr_failed={ocr_failed} outdir={outdir}"
+        )
+        return 0 if ocr_failed == 0 else 2
     finally:
         if tmp_pdf is not None:
             shutil.rmtree(tmp_pdf.parent, ignore_errors=True)
