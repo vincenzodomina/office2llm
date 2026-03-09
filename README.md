@@ -1,9 +1,10 @@
 # office2llm
 
-Convert Office documents and PDFs into **OCR-friendly, per-page PNGs** and **per-page OCR text** for advanced document understanding.
+Convert Office documents, PDFs, and images into **OCR-friendly, per-page PNGs** and **per-page OCR text** for advanced document understanding.
 
 - **Office → PDF**: uses LibreOffice (`libreoffice` / `soffice`) in headless mode
 - **PDF → PNG**: renders pages via `pypdfium2` and writes `page_0001.png`, `page_0002.png`, …
+- **Image → PNG**: normalizes supported image inputs into a single OCR-ready page image
 - **PNG → OCR text**: uses LLM based API to extract text from each page, preserving the document's semantic structure (headers, hierarchy, data relationships, lists, tables).
 
 ## Requirements
@@ -71,6 +72,12 @@ office2llm --input /path/to/report.pptx --outdir /tmp/report-pages --dpi 200
 office2llm --input /path/to/file.pdf --outdir ./out --dpi 250
 ```
 
+### Convert an image
+
+```bash
+office2llm --input /path/to/image.png --fulltext-only
+```
+
 ### Convert to a single sibling fulltext file only
 
 ```bash
@@ -82,6 +89,18 @@ This writes:
 - `/path/to/example.pdf.txt`
 
 No output folder is kept in this mode.
+
+### Convert every eligible document in a folder
+
+```bash
+yes | office2llm --input /path/to/folder
+```
+
+When `--input` points to a folder, the CLI asks for confirmation and then processes each eligible document or image in that folder in fulltext-only mode, writing sibling files like:
+
+- `/path/to/folder/example.pdf.txt`
+- `/path/to/folder/report.docx.txt`
+- `/path/to/folder/photo.jpg.txt`
 
 ### Tune timeouts (Office → PDF step)
 

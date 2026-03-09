@@ -27,6 +27,7 @@ Each page is sent to an OCR-capable LLMfor OCR text extraction. The LLM preserve
 | Slides | `.pptx`, `.ppt`, `.odp` |
 | Sheets | `.xlsx`, `.xls`, `.ods` |
 | PDF | `.pdf` (rendered directly, LibreOffice not needed) |
+| Images | `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.tif`, `.tiff` |
 
 Anything LibreOffice can open will work — the list above covers the most common cases.
 
@@ -52,7 +53,7 @@ export PATH="$HOME/.local/bin:$PATH"
 ## CLI reference
 
 ```
-office2llm --input <file> [--outdir <dir>] [--dpi <int>] [--timeout-s <int>]
+office2llm --input <file-or-folder> [--outdir <dir>] [--dpi <int>] [--timeout-s <int>] [--fulltext-only]
 ```
 
 | Flag | Default | Description |
@@ -61,6 +62,7 @@ office2llm --input <file> [--outdir <dir>] [--dpi <int>] [--timeout-s <int>]
 | `--outdir` | sibling folder named after input | Where to write PNGs and text files |
 | `--dpi` | `200` | Render resolution (higher = sharper but larger files) |
 | `--timeout-s` | `120` | Max seconds for the LibreOffice conversion step |
+| `--fulltext-only` | `false` | Write one sibling `<input-name>.<ext>.txt` file and remove intermediate page files |
 
 ## Use cases
 
@@ -84,6 +86,12 @@ office2llm --input slides.pptx --outdir ./slide-images --dpi 300
 office2llm --input paper.pdf --outdir ./pages --dpi 250
 ```
 
+### Convert an image
+
+```bash
+office2llm --input /path/to/photo.jpg --fulltext-only
+```
+
 ### Convert to a single sibling fulltext file only
 
 ```bash
@@ -95,6 +103,18 @@ This writes:
 - `/path/to/example.pdf.txt`
 
 No output folder is kept in this mode.
+
+### Convert every eligible document in a folder
+
+```bash
+yes | office2llm --input /path/to/folder
+```
+
+This confirms the interactive prompt automatically and writes sibling outputs like:
+
+- `/path/to/folder/example.pdf.txt`
+- `/path/to/folder/report.docx.txt`
+- `/path/to/folder/photo.jpg.txt`
 
 ### Convert a large spreadsheet (increase timeout)
 
