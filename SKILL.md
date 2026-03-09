@@ -84,6 +84,18 @@ office2llm --input slides.pptx --outdir ./slide-images --dpi 300
 office2llm --input paper.pdf --outdir ./pages --dpi 250
 ```
 
+### Convert to a single sibling fulltext file only
+
+```bash
+office2llm --input /path/to/example.pdf --fulltext-only
+```
+
+This writes:
+
+- `/path/to/example.pdf.txt`
+
+No output folder is kept in this mode.
+
 ### Convert a large spreadsheet (increase timeout)
 
 ```bash

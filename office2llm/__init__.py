@@ -195,6 +195,14 @@ def main(argv: list[str] | None = None) -> int:
         default=120,
         help="LibreOffice convert timeout seconds.",
     )
+    ap.add_argument(
+        "--fulltext-only",
+        action="store_true",
+        help=(
+            "Write a single sibling <input-filename>.<ext>.txt file with all OCR text "
+            "and remove intermediate page images/files."
+        ),
+    )
     args = ap.parse_args(argv)
 
     if not os.environ.get("GEMINI_API_KEY"):
@@ -204,12 +212,18 @@ def main(argv: list[str] | None = None) -> int:
     if not input_path.exists():
         raise SystemExit(f"input not found: {input_path}")
 
+    if args.fulltext_only and args.outdir:
+        raise SystemExit("--fulltext-only cannot be used with --outdir")
+
     if args.outdir:
         outdir = Path(args.outdir).expanduser().resolve()
+    elif args.fulltext_only:
+        outdir = Path(tempfile.mkdtemp(prefix="office2llm_pages_"))
     else:
         outdir = (input_path.parent / input_path.stem).resolve()
 
     tmp_pdf: Path | None = None
+    final_txt_path = input_path.parent / f"{input_path.name}.txt"
     try:
         if input_path.suffix.lower() == ".pdf":
             pdf_path = input_path
@@ -222,6 +236,7 @@ def main(argv: list[str] | None = None) -> int:
         ocr_ok = 0
         ocr_skipped = 0
         ocr_failed = 0
+        page_texts = [""] * pages
         if pages > 0:
             max_workers = min(4, pages)
             with ThreadPoolExecutor(max_workers=max_workers) as ex:
@@ -229,28 +244,38 @@ def main(argv: list[str] | None = None) -> int:
                 for i in range(1, pages + 1):
                     png_path = outdir / f"page_{i:04d}.png"
                     txt_path = outdir / f"page_{i:04d}.txt"
-                    if txt_path.exists():
+                    if not args.fulltext_only and txt_path.exists():
                         ocr_skipped += 1
                         continue
-                    futures[ex.submit(run_ocr, png_path)] = txt_path
+                    futures[ex.submit(run_ocr, png_path)] = (i - 1, txt_path)
 
                 for fut in as_completed(futures):
-                    txt_path = futures[fut]
+                    page_idx, txt_path = futures[fut]
                     try:
                         text = fut.result()
-                        tmp_path = txt_path.with_suffix(txt_path.suffix + ".tmp")
-                        tmp_path.write_text(text or "", encoding="utf-8")
-                        tmp_path.replace(txt_path)
+                        page_texts[page_idx] = text or ""
+                        if not args.fulltext_only:
+                            tmp_path = txt_path.with_suffix(txt_path.suffix + ".tmp")
+                            tmp_path.write_text(text or "", encoding="utf-8")
+                            tmp_path.replace(txt_path)
                         ocr_ok += 1
                     except Exception as e:
                         ocr_failed += 1
                         print(f"ocr failed file={txt_path.name} err={e}")
 
+        if args.fulltext_only and ocr_failed == 0:
+            tmp_path = final_txt_path.with_suffix(final_txt_path.suffix + ".tmp")
+            tmp_path.write_text("\n\n".join(page_texts), encoding="utf-8")
+            tmp_path.replace(final_txt_path)
+
         print(
-            f"ok pages={pages} ocr_ok={ocr_ok} ocr_skipped={ocr_skipped} ocr_failed={ocr_failed} outdir={outdir}"
+            f"ok pages={pages} ocr_ok={ocr_ok} ocr_skipped={ocr_skipped} ocr_failed={ocr_failed} "
+            f"{'output=' + str(final_txt_path) if args.fulltext_only else 'outdir=' + str(outdir)}"
         )
         return 0 if ocr_failed == 0 else 2
     finally:
+        if args.fulltext_only:
+            shutil.rmtree(outdir, ignore_errors=True)
         if tmp_pdf is not None:
             shutil.rmtree(tmp_pdf.parent, ignore_errors=True)
 

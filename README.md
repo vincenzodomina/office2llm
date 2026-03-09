@@ -71,6 +71,18 @@ office2llm --input /path/to/report.pptx --outdir /tmp/report-pages --dpi 200
 office2llm --input /path/to/file.pdf --outdir ./out --dpi 250
 ```
 
+### Convert to a single sibling fulltext file only
+
+```bash
+office2llm --input /path/to/example.pdf --fulltext-only
+```
+
+This writes:
+
+- `/path/to/example.pdf.txt`
+
+No output folder is kept in this mode.
+
 ### Tune timeouts (Office → PDF step)
 
 ```bash
