@@ -114,7 +114,9 @@ def run_ocr(image: bytes | Path) -> str:
         client.close()
 
 
-def office_to_pdf(input_path: Path, *, timeout_s: int = 120) -> Path:
+def office_to_format(
+    input_path: Path, *, output_format: str, timeout_s: int = 120
+) -> Path:
     soffice = shutil.which("libreoffice") or shutil.which("soffice")
     if not soffice:
         raise RuntimeError("LibreOffice/soffice not found on $PATH")
@@ -140,7 +142,7 @@ def office_to_pdf(input_path: Path, *, timeout_s: int = 120) -> Path:
                 "--nolockcheck",
                 "--nofirststartwizard",
                 "--convert-to",
-                "pdf",
+                output_format,
                 "--outdir",
                 str(tmpdir),
                 str(input_path),
@@ -152,16 +154,33 @@ def office_to_pdf(input_path: Path, *, timeout_s: int = 120) -> Path:
             env=env,
         )
 
-        expected = tmpdir / f"{input_path.stem}.pdf"
+        expected = tmpdir / f"{input_path.stem}.{output_format}"
         if expected.exists():
             return expected
-        pdfs = sorted(tmpdir.glob("*.pdf"))
-        if len(pdfs) == 1:
-            return pdfs[0]
-        raise RuntimeError(f"LibreOffice conversion succeeded but no PDF found in {tmpdir}")
+        outputs = sorted(tmpdir.glob(f"*.{output_format}"))
+        if len(outputs) == 1:
+            return outputs[0]
+        raise RuntimeError(
+            f"LibreOffice conversion succeeded but no {output_format.upper()} found in {tmpdir}"
+        )
+    except subprocess.CalledProcessError as error:
+        detail = error.stderr.decode(errors="replace").strip()
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        message = detail or f"LibreOffice exited with status {error.returncode}"
+        raise RuntimeError(
+            f"LibreOffice {output_format.upper()} conversion failed: {message}"
+        ) from error
     except Exception:
         shutil.rmtree(tmpdir, ignore_errors=True)
         raise
+
+
+def office_to_pdf(input_path: Path, *, timeout_s: int = 120) -> Path:
+    return office_to_format(input_path, output_format="pdf", timeout_s=timeout_s)
+
+
+def office_to_docx(input_path: Path, *, timeout_s: int = 120) -> Path:
+    return office_to_format(input_path, output_format="docx", timeout_s=timeout_s)
 
 
 def docx_has_embedded_images(input_path: Path) -> bool:
@@ -175,17 +194,18 @@ def docx_has_embedded_images(input_path: Path) -> bool:
         raise RuntimeError(f"invalid DOCX file: {input_path}") from error
 
 
-def docx_to_markdown(input_path: Path, *, outdir: Path | None) -> Path:
+def markdown_output_path(input_path: Path, outdir: Path | None) -> Path:
+    if outdir is None:
+        return input_path.with_suffix(".md")
+    return outdir.expanduser().resolve() / f"{input_path.stem}.md"
+
+
+def docx_to_markdown(input_path: Path, *, output_path: Path) -> Path:
     pandoc = shutil.which("pandoc")
     if not pandoc:
         raise RuntimeError("Pandoc not found on $PATH")
 
-    if outdir is None:
-        output_path = input_path.with_suffix(".md")
-    else:
-        output_dir = outdir.expanduser().resolve()
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{input_path.stem}.md"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
     try:
@@ -212,6 +232,27 @@ def docx_to_markdown(input_path: Path, *, outdir: Path | None) -> Path:
         tmp_path.unlink(missing_ok=True)
         raise
     return output_path
+
+
+def word_to_markdown_if_native(
+    input_path: Path, *, outdir: Path | None, timeout_s: int
+) -> Path | None:
+    temporary_docx = None
+    if input_path.suffix.lower() == ".doc":
+        temporary_docx = office_to_docx(input_path, timeout_s=timeout_s)
+        docx_path = temporary_docx
+    else:
+        docx_path = input_path
+
+    try:
+        if docx_has_embedded_images(docx_path):
+            return None
+        return docx_to_markdown(
+            docx_path, output_path=markdown_output_path(input_path, outdir)
+        )
+    finally:
+        if temporary_docx is not None:
+            shutil.rmtree(temporary_docx.parent, ignore_errors=True)
 
 
 def pdf_to_png_pages(pdf_path: Path, *, outdir: Path, dpi: int) -> int:
@@ -271,12 +312,18 @@ def process_document(
     if fulltext_only and outdir is not None:
         raise SystemExit("--fulltext-only cannot be used with --outdir")
 
-    if input_path.suffix.lower() == ".docx" and not docx_has_embedded_images(
-        input_path
-    ):
-        output_path = docx_to_markdown(input_path, outdir=outdir)
-        print(f"ok input={input_path} mode=pandoc output={output_path}")
-        return 0
+    if input_path.suffix.lower() in {".doc", ".docx"}:
+        output_path = word_to_markdown_if_native(
+            input_path, outdir=outdir, timeout_s=timeout_s
+        )
+        if output_path is not None:
+            mode = (
+                "libreoffice+pandoc"
+                if input_path.suffix.lower() == ".doc"
+                else "pandoc"
+            )
+            print(f"ok input={input_path} mode={mode} output={output_path}")
+            return 0
 
     if not os.environ.get("GEMINI_API_KEY"):
         raise RuntimeError(
@@ -351,10 +398,10 @@ def process_document(
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
-        description="Convert native DOCX to Markdown or use full-page OCR when needed."
+        description="Convert native Word files to Markdown or use full-page OCR when needed."
     )
     ap.add_argument(
-        "--input", required=True, help="Path to input file (docx/pptx/xlsx/pdf/...)."
+        "--input", required=True, help="Path to input file (doc/docx/pptx/xlsx/pdf/...)."
     )
     ap.add_argument(
         "--outdir",
@@ -376,7 +423,7 @@ def main(argv: list[str] | None = None) -> int:
         "--fulltext-only",
         action="store_true",
         help=(
-            "Write one sibling output and remove OCR intermediates. Native DOCX uses "
+            "Write one sibling output and remove OCR intermediates. Native Word uses "
             ".md; OCR-routed inputs use <input-filename>.<ext>.txt."
         ),
     )

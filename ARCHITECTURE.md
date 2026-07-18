@@ -2,8 +2,8 @@
 
 ### System overview
 `office2llm` is a batch-oriented CLI with two deterministic document paths:
-- **Native DOCX path**: image-free DOCX files are converted directly to Markdown with Pandoc.
-- **OCR path**: DOCX files with any embedded image, other Office formats, PDFs, and images use per-page rendering and OCR.
+- **Native Word path**: image-free DOCX files use Pandoc; legacy DOC files use a temporary LibreOffice DOCX conversion followed by Pandoc.
+- **OCR path**: Word files with any embedded image, other Office formats, PDFs, and images use per-page rendering and OCR.
 
 The OCR path produces:
 - **Page images**: `page_XXXX.png`
@@ -15,7 +15,7 @@ It supports Office formats by converting them into a PDF first, then rendering p
 - **Language/runtime**: Python 3.10+
 - **CLI**: Python entrypoint (`office2llm`)
 - **Office → PDF conversion**: LibreOffice/soffice (external binary)
-- **DOCX → Markdown conversion**: Pandoc (external binary)
+- **Word → Markdown conversion**: LibreOffice for legacy DOC, then Pandoc
 - **PDF rendering**: PDFium via `pypdfium2`
 - **Image handling**: `Pillow`
 - **OCR (LLM)**: Google GenAI SDK (`google-genai`) to an external Gemini OCR-capable model
@@ -27,8 +27,8 @@ It supports Office formats by converting them into a PDF first, then rendering p
 ```mermaid
 flowchart TD
   U[User] -->|--input FILE| CLI[office2llm CLI]
-  CLI --> T{Image-free DOCX?}
-  T -->|Yes| M[Pandoc to Markdown]
+  CLI --> T{Image-free Word file?}
+  T -->|Yes| M[DOC bridge if needed, then Pandoc]
   T -->|No| K{PDF input?}
   K -->|No| C[Convert to PDF]
   K -->|Yes| P[Open PDF]
@@ -63,7 +63,7 @@ sequenceDiagram
   participant FS as Filesystem
 
   U->>CLI: Run with input path
-  alt Image-free DOCX
+  alt Image-free Word file
     CLI->>FS: Write Pandoc Markdown
   else Input requires OCR
     CLI->>LO: Convert to PDF
@@ -90,8 +90,8 @@ sequenceDiagram
 
 ### Runtime dependencies
 - **Local execution**
-  - Requires Pandoc for image-free DOCX conversion.
-  - Requires LibreOffice installed and available on `PATH` for non-PDF inputs.
+  - Requires Pandoc for image-free Word conversion.
+  - Requires LibreOffice installed and available on `PATH` for legacy DOC and non-PDF OCR inputs.
   - Requires credentials only for inputs routed to the OCR service.
 - **Container execution**
   - Docker image bundles LibreOffice and Python dependencies; OCR still requires credentials at runtime.
@@ -102,6 +102,6 @@ sequenceDiagram
   - Optional output directory
   - Optional rendering-quality controls
 - **CLI outputs**
-  - One Markdown file for an image-free DOCX
+  - One Markdown file for an image-free Word document
   - `page_XXXX.png` and `page_XXXX.txt` per page
   - A single-line summary and a process exit code indicating success/partial failure

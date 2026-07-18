@@ -45,7 +45,38 @@ class DocxRoutingTests(unittest.TestCase):
                     )
 
             self.assertEqual(exit_code, 0)
-            convert.assert_called_once_with(source, outdir=None)
+            convert.assert_called_once_with(source, output_path=output)
+
+    def test_image_free_doc_uses_libreoffice_then_pandoc_without_api_key(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "legacy.doc"
+            source.write_bytes(b"legacy")
+            conversion_dir = root / "converted"
+            conversion_dir.mkdir()
+            converted = conversion_dir / "legacy.docx"
+            write_docx(converted, with_image=False)
+            output = source.with_suffix(".md")
+
+            with patch.dict(os.environ, {}, clear=True):
+                with patch.object(
+                    office2llm, "office_to_docx", return_value=converted
+                ) as bridge:
+                    with patch.object(
+                        office2llm, "docx_to_markdown", return_value=output
+                    ) as convert:
+                        exit_code = office2llm.process_document(
+                            source,
+                            outdir=None,
+                            dpi=200,
+                            timeout_s=120,
+                            fulltext_only=False,
+                        )
+
+            self.assertEqual(exit_code, 0)
+            bridge.assert_called_once_with(source, timeout_s=120)
+            convert.assert_called_once_with(converted, output_path=output)
+            self.assertFalse(conversion_dir.exists())
 
     def test_docx_with_image_requires_ocr_key_before_rendering(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -64,6 +95,33 @@ class DocxRoutingTests(unittest.TestCase):
                         )
 
             render.assert_not_called()
+
+    def test_doc_with_image_requires_ocr_key_after_inspection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "illustrated.doc"
+            source.write_bytes(b"legacy")
+            conversion_dir = root / "converted"
+            conversion_dir.mkdir()
+            converted = conversion_dir / "illustrated.docx"
+            write_docx(converted, with_image=True)
+
+            with patch.dict(os.environ, {}, clear=True):
+                with patch.object(
+                    office2llm, "office_to_docx", return_value=converted
+                ):
+                    with patch.object(office2llm, "office_to_pdf") as render:
+                        with self.assertRaisesRegex(RuntimeError, "full-page OCR"):
+                            office2llm.process_document(
+                                source,
+                                outdir=None,
+                                dpi=200,
+                                timeout_s=120,
+                                fulltext_only=False,
+                            )
+
+            render.assert_not_called()
+            self.assertFalse(conversion_dir.exists())
 
 
 if __name__ == "__main__":

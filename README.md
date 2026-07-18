@@ -1,8 +1,9 @@
 # office2llm
 
-Convert native DOCX documents into Markdown and use full-page OCR when visual context is required.
+Convert native Word documents into Markdown and use full-page OCR when visual context is required.
 
 - **DOCX → Markdown**: image-free DOCX files use Pandoc and do not require an API key
+- **DOC → DOCX → Markdown**: image-free legacy Word files use LibreOffice followed by Pandoc
 - **Image-bearing DOCX → OCR**: any embedded image routes the entire document through the full-page OCR pipeline
 - **Office → PDF**: uses LibreOffice (`libreoffice` / `soffice`) in headless mode
 - **PDF → PNG**: renders pages via `pypdfium2` and writes `page_0001.png`, `page_0002.png`, …
@@ -12,10 +13,10 @@ Convert native DOCX documents into Markdown and use full-page OCR when visual co
 ## Requirements
 
 - **Python**: 3.10+
-- **Pandoc**: required for image-free DOCX conversion
+- **Pandoc**: required for image-free Word conversion
 - **Gemini API key**: required only when the input routes to OCR
   - Export `GEMINI_API_KEY` before running.
-- **LibreOffice**: required for inputs routed to OCR (`.docx` with images, `.pptx`, `.xlsx`, …)
+- **LibreOffice**: required for legacy `.doc` and inputs routed to OCR (`.docx` with images, `.pptx`, `.xlsx`, …)
   - The binary must be discoverable as `libreoffice` or `soffice` on `PATH`.
   - `office2llm` sets a **writable temporary `HOME`** and **UTF-8 locale defaults** for the subprocess
     to avoid common headless failures in sandboxes/containers (e.g. exit code 77 / “UI language cannot be determined”).
@@ -44,7 +45,7 @@ export PATH="$HOME/.local/bin:$PATH"
 office2llm --input /path/to/report.docx
 ```
 
-An image-free DOCX produces `/path/to/report.md` through Pandoc. If the DOCX contains an embedded image, `office2llm` uses full-page OCR and requires `GEMINI_API_KEY`.
+An image-free `.docx` or `.doc` produces `/path/to/report.md`. Legacy `.doc` first passes through a temporary LibreOffice DOCX conversion. If the converted Word document contains an embedded image, `office2llm` uses full-page OCR and requires `GEMINI_API_KEY`.
 
 ## Usage
 
@@ -54,7 +55,7 @@ Show help:
 office2llm --help
 ```
 
-### Convert an image-free DOCX to Markdown
+### Convert an image-free Word document to Markdown
 
 ```bash
 office2llm --input /path/to/report.docx
@@ -65,6 +66,12 @@ The output is written beside the input:
 - `/path/to/report.docx` → `/path/to/report.md`
 
 Pandoc preserves native headings, lists, emphasis, and tables. An embedded image causes the complete document to use the existing OCR pipeline so the image remains in its rendered page context.
+
+Legacy `.doc` input uses the same output and routing rules:
+
+```bash
+office2llm --input /path/to/legacy-report.doc
+```
 
 ### Convert with a custom output folder
 
@@ -107,8 +114,8 @@ yes | office2llm --input /path/to/folder
 When `--input` points to a folder, the CLI asks for confirmation and then processes each eligible document or image in that folder in fulltext-only mode, writing sibling files like:
 
 - `/path/to/folder/example.pdf.txt`
-- `/path/to/folder/report.md` for image-free DOCX
-- `/path/to/folder/illustrated.docx.txt` for DOCX routed to OCR
+- `/path/to/folder/report.md` for image-free DOCX or DOC
+- `/path/to/folder/illustrated.docx.txt` for Word files routed to OCR
 - `/path/to/folder/photo.jpg.txt`
 
 ### Tune timeouts (Office → PDF step)
@@ -119,7 +126,7 @@ office2llm --input ./big.xlsx --timeout-s 300
 
 ## Output
 
-Image-free DOCX files produce one Markdown file. OCR-routed inputs write:
+Image-free Word files produce one Markdown file. OCR-routed inputs write:
 - `page_0001.png`
 - `page_0002.png`
 - …
