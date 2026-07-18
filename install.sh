@@ -4,7 +4,7 @@ set -euo pipefail
 # office2llm installer (macOS + Linux)
 #
 # What this script does:
-# - Installs LibreOffice (required for .docx/.pptx/.xlsx conversions) and common fonts.
+# - Installs Pandoc, LibreOffice, and common fonts.
 #   - macOS: uses Homebrew cask if available
 #   - Linux: uses your system package manager (apt/dnf/yum/pacman/apk)
 # - On Linux, also best-effort ensures Python 3 + venv support exist.
@@ -69,6 +69,19 @@ install_libreoffice_macos() {
   fi
 }
 
+install_pandoc_macos() {
+  if have pandoc; then
+    return 0
+  fi
+  if have brew; then
+    say "Installing Pandoc via Homebrew..."
+    brew install pandoc
+  else
+    say "error: Pandoc not found, and Homebrew is not installed."
+    exit 1
+  fi
+}
+
 install_libreoffice_linux() {
   if have libreoffice || have soffice; then
     return 0
@@ -114,6 +127,27 @@ install_libreoffice_linux() {
   fi
 }
 
+install_pandoc_linux() {
+  if have pandoc; then
+    return 0
+  fi
+  if have apt-get; then
+    as_root apt-get update -y
+    as_root apt-get install -y --no-install-recommends pandoc
+  elif have dnf; then
+    as_root dnf install -y pandoc
+  elif have yum; then
+    as_root yum install -y pandoc
+  elif have pacman; then
+    as_root pacman -Sy --noconfirm pandoc
+  elif have apk; then
+    as_root apk add --no-cache pandoc
+  else
+    say "error: install Pandoc, then re-run this installer."
+    exit 1
+  fi
+}
+
 ensure_python_tools_linux() {
   # Best-effort: ensure python3 + venv support exist on common VPS distros.
   if have python3 && python3 -c 'import sys; sys.exit(0)' >/dev/null 2>&1; then
@@ -142,10 +176,12 @@ ensure_python_tools_linux() {
 main() {
   case "$(uname -s)" in
     Darwin)
+      install_pandoc_macos
       install_libreoffice_macos
       ;;
     Linux)
       ensure_python_tools_linux
+      install_pandoc_linux
       install_libreoffice_linux
       ;;
     *)

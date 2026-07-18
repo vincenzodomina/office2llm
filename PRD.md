@@ -1,10 +1,11 @@
 ## PRD: office2llm (Per-page Images + OCR Text)
 
 ### Summary
-`office2llm` is a command-line tool that converts Office documents and PDFs into per-page assets suitable for downstream search and retrieval workflows: one page image and one OCR text file per page.
+`office2llm` converts image-free DOCX files directly to Markdown. DOCX files with embedded images and all other supported inputs use per-page rendering and OCR.
 
 ### Goals
 - **One-command batch conversion** from a single input document to per-page outputs.
+- **Native DOCX extraction** through Pandoc without an OCR API key when no images are embedded.
 - **High-fidelity OCR text** that captures all readable text and preserves semantic structure (lists, tables, key/value lines).
 - **Deterministic, resumable outputs** so repeated runs are safe and predictable.
 
@@ -19,7 +20,8 @@
 
 ### User experience (happy path)
 - The user runs the CLI with an input document path and optionally an output directory.
-- The tool produces an output directory containing:
+- An image-free DOCX produces a single Markdown file.
+- An OCR-routed input produces an output directory containing:
   - `page_0001.png`, `page_0002.png`, …
   - `page_0001.txt`, `page_0002.txt`, …
 - The user ingests the `.txt` files (and optionally keeps `.png` files for traceability/auditing).
@@ -31,12 +33,14 @@
   - The tool shall fail with a clear error message if the input file does not exist or cannot be read.
 
 - **Outputs**
+  - Image-free DOCX files shall produce a single sibling Markdown file.
   - The tool shall create an output directory for results (defaulting to a predictable location when not specified).
   - The tool shall produce exactly one page image per page, named `page_XXXX.png` (zero-padded).
   - The tool shall produce exactly one OCR text file per page, named `page_XXXX.txt` (zero-padded).
   - Each `page_XXXX.txt` shall be written alongside its corresponding `page_XXXX.png`.
 
 - **OCR behavior**
+  - A DOCX file with any embedded image shall use the full-page OCR path for the complete document.
   - For each page image, the tool shall request OCR text from an external OCR service.
   - The OCR output shall follow a natural human reading order and preserve semantic structure (including tables and lists).
   - The OCR output shall include all readable text visible on the page (including headers/footers/marginalia when readable).
@@ -56,11 +60,11 @@
 
 - **Configuration**
   - The tool shall allow users to tune page rendering quality.
-  - The tool shall require users to supply credentials needed to access the OCR service and fail fast if missing.
+  - The tool shall require credentials only when the selected path uses the OCR service.
 
 ### Acceptance criteria
-- Running on a multi-page input produces matching sets of `page_XXXX.png` and `page_XXXX.txt` for every page.
+- Running on an image-free DOCX without OCR credentials produces a Markdown file through Pandoc.
+- Running on an OCR-routed multi-page input produces matching sets of `page_XXXX.png` and `page_XXXX.txt` for every page.
 - Re-running the tool on the same output directory does not re-generate existing `page_XXXX.txt` files by default.
-- Missing OCR credentials causes a clear, actionable failure before any OCR requests are attempted.
+- Missing OCR credentials causes a clear, actionable failure only for inputs routed to OCR.
 - When OCR requests fail for some pages, the tool completes the rest of the pages, reports failures, and exits non-zero.
-

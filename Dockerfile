@@ -10,6 +10,7 @@ RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive \
     apt-get install -y --no-install-recommends \
         libreoffice-core libreoffice-writer libreoffice-calc libreoffice-impress \
+        pandoc \
         fonts-liberation fonts-noto-core fonts-noto-cjk && \
     fc-cache -f && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -20,4 +21,3 @@ COPY office2llm /app/office2llm
 RUN pip install --no-cache-dir /app
 
 ENTRYPOINT ["office2llm"]
-

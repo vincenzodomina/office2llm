@@ -12,6 +12,12 @@ and includes additional components under various other open source licenses.
 
 See: `https://www.libreoffice.org/about-us/licenses/`
 
+## Pandoc
+
+Pandoc is licensed under GPL-2.0-or-later and is installed as an external executable.
+
+See: `https://pandoc.org/`
+
 ## pypdfium2 / PDFium
 
 This converter uses:
@@ -25,4 +31,3 @@ See: `https://pypi.org/project/pypdfium2/`
 This converter uses Pillow (PIL fork) for PNG encoding.
 
 See: `https://pypi.org/project/pillow/`
-

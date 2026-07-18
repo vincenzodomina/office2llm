@@ -1,7 +1,11 @@
 ## Architecture: office2llm
 
 ### System overview
-`office2llm` is a batch-oriented CLI that converts a single input document into per-page artifacts for downstream retrieval workflows:
+`office2llm` is a batch-oriented CLI with two deterministic document paths:
+- **Native DOCX path**: image-free DOCX files are converted directly to Markdown with Pandoc.
+- **OCR path**: DOCX files with any embedded image, other Office formats, PDFs, and images use per-page rendering and OCR.
+
+The OCR path produces:
 - **Page images**: `page_XXXX.png`
 - **OCR text**: `page_XXXX.txt`
 
@@ -11,6 +15,7 @@ It supports Office formats by converting them into a PDF first, then rendering p
 - **Language/runtime**: Python 3.10+
 - **CLI**: Python entrypoint (`office2llm`)
 - **Office → PDF conversion**: LibreOffice/soffice (external binary)
+- **DOCX → Markdown conversion**: Pandoc (external binary)
 - **PDF rendering**: PDFium via `pypdfium2`
 - **Image handling**: `Pillow`
 - **OCR (LLM)**: Google GenAI SDK (`google-genai`) to an external Gemini OCR-capable model
@@ -22,9 +27,11 @@ It supports Office formats by converting them into a PDF first, then rendering p
 ```mermaid
 flowchart TD
   U[User] -->|--input FILE| CLI[office2llm CLI]
-  CLI --> T{Input type?}
-  T -->|Office doc| C[Convert to PDF]
-  T -->|PDF| P[Open PDF]
+  CLI --> T{Image-free DOCX?}
+  T -->|Yes| M[Pandoc to Markdown]
+  T -->|No| K{PDF input?}
+  K -->|No| C[Convert to PDF]
+  K -->|Yes| P[Open PDF]
   C --> P
   P --> R[Render each page to PNG]
   R --> W1[Write page_XXXX.png]
@@ -56,18 +63,20 @@ sequenceDiagram
   participant FS as Filesystem
 
   U->>CLI: Run with input path
-  alt Input is Office format
+  alt Image-free DOCX
+    CLI->>FS: Write Pandoc Markdown
+  else Input requires OCR
     CLI->>LO: Convert to PDF
     LO-->>CLI: PDF
-  end
-  CLI->>PDF: Load PDF
-  loop For each page
-    CLI->>PDF: Render page
-    PDF-->>CLI: Page image
-    CLI->>FS: Write page_XXXX.png
-    CLI->>OCR: OCR(page_XXXX.png)
-    OCR-->>CLI: Extracted text
-    CLI->>FS: Write page_XXXX.txt
+    CLI->>PDF: Load PDF
+    loop For each page
+      CLI->>PDF: Render page
+      PDF-->>CLI: Page image
+      CLI->>FS: Write page_XXXX.png
+      CLI->>OCR: OCR(page_XXXX.png)
+      OCR-->>CLI: Extracted text
+      CLI->>FS: Write page_XXXX.txt
+    end
   end
   CLI-->>U: Summary + exit status
 ```
@@ -81,8 +90,9 @@ sequenceDiagram
 
 ### Runtime dependencies
 - **Local execution**
+  - Requires Pandoc for image-free DOCX conversion.
   - Requires LibreOffice installed and available on `PATH` for non-PDF inputs.
-  - Requires credentials for the OCR service.
+  - Requires credentials only for inputs routed to the OCR service.
 - **Container execution**
   - Docker image bundles LibreOffice and Python dependencies; OCR still requires credentials at runtime.
 
@@ -92,6 +102,6 @@ sequenceDiagram
   - Optional output directory
   - Optional rendering-quality controls
 - **CLI outputs**
+  - One Markdown file for an image-free DOCX
   - `page_XXXX.png` and `page_XXXX.txt` per page
   - A single-line summary and a process exit code indicating success/partial failure
-

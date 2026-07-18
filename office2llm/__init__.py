@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -163,6 +164,56 @@ def office_to_pdf(input_path: Path, *, timeout_s: int = 120) -> Path:
         raise
 
 
+def docx_has_embedded_images(input_path: Path) -> bool:
+    try:
+        with zipfile.ZipFile(input_path) as archive:
+            return any(
+                name.startswith("word/media/") and not name.endswith("/")
+                for name in archive.namelist()
+            )
+    except zipfile.BadZipFile as error:
+        raise RuntimeError(f"invalid DOCX file: {input_path}") from error
+
+
+def docx_to_markdown(input_path: Path, *, outdir: Path | None) -> Path:
+    pandoc = shutil.which("pandoc")
+    if not pandoc:
+        raise RuntimeError("Pandoc not found on $PATH")
+
+    if outdir is None:
+        output_path = input_path.with_suffix(".md")
+    else:
+        output_dir = outdir.expanduser().resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / f"{input_path.stem}.md"
+
+    tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+    try:
+        subprocess.run(
+            [
+                pandoc,
+                str(input_path),
+                "--from=docx",
+                "--to=gfm",
+                "--wrap=none",
+                "--markdown-headings=atx",
+                f"--output={tmp_path}",
+            ],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        tmp_path.replace(output_path)
+    except subprocess.CalledProcessError as error:
+        tmp_path.unlink(missing_ok=True)
+        detail = error.stderr.decode(errors="replace").strip()
+        raise RuntimeError(f"Pandoc conversion failed: {detail or error}") from error
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    return output_path
+
+
 def pdf_to_png_pages(pdf_path: Path, *, outdir: Path, dpi: int) -> int:
     outdir.mkdir(parents=True, exist_ok=True)
     doc = pdfium.PdfDocument(str(pdf_path))
@@ -219,6 +270,18 @@ def process_document(
 ) -> int:
     if fulltext_only and outdir is not None:
         raise SystemExit("--fulltext-only cannot be used with --outdir")
+
+    if input_path.suffix.lower() == ".docx" and not docx_has_embedded_images(
+        input_path
+    ):
+        output_path = docx_to_markdown(input_path, outdir=outdir)
+        print(f"ok input={input_path} mode=pandoc output={output_path}")
+        return 0
+
+    if not os.environ.get("GEMINI_API_KEY"):
+        raise RuntimeError(
+            "GEMINI_API_KEY is required because this input needs full-page OCR."
+        )
 
     if outdir is not None:
         resolved_outdir = outdir.expanduser().resolve()
@@ -288,7 +351,7 @@ def process_document(
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
-        description="Convert Office/PDF to per-page PNGs and LLM OCR text."
+        description="Convert native DOCX to Markdown or use full-page OCR when needed."
     )
     ap.add_argument(
         "--input", required=True, help="Path to input file (docx/pptx/xlsx/pdf/...)."
@@ -313,14 +376,11 @@ def main(argv: list[str] | None = None) -> int:
         "--fulltext-only",
         action="store_true",
         help=(
-            "Write a single sibling <input-filename>.<ext>.txt file with all OCR text "
-            "and remove intermediate page images/files."
+            "Write one sibling output and remove OCR intermediates. Native DOCX uses "
+            ".md; OCR-routed inputs use <input-filename>.<ext>.txt."
         ),
     )
     args = ap.parse_args(argv)
-
-    if not os.environ.get("GEMINI_API_KEY"):
-        raise SystemExit("GEMINI_API_KEY is required for OCR output.")
 
     input_path = Path(args.input).expanduser().resolve()
     if not input_path.exists():
@@ -338,7 +398,7 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f"no eligible documents found in: {input_path}")
         try:
             answer = input(
-                f"Process {len(inputs)} documents in {input_path} in fulltext-only mode and write sibling .txt files? [y/N] "
+                f"Process {len(inputs)} documents in {input_path} and write sibling Markdown or OCR text files? [y/N] "
             )
         except EOFError:
             raise SystemExit("confirmation required for directory input")
@@ -364,13 +424,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"batch processed={len(inputs)} failed={failures}")
         return 0 if failures == 0 else 2
 
-    return process_document(
-        input_path,
-        outdir=Path(args.outdir) if args.outdir else None,
-        dpi=args.dpi,
-        timeout_s=args.timeout_s,
-        fulltext_only=args.fulltext_only,
-    )
+    try:
+        return process_document(
+            input_path,
+            outdir=Path(args.outdir) if args.outdir else None,
+            dpi=args.dpi,
+            timeout_s=args.timeout_s,
+            fulltext_only=args.fulltext_only,
+        )
+    except RuntimeError as error:
+        raise SystemExit(str(error)) from error
 
 
 def cli() -> None:
