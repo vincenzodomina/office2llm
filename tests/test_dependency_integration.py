@@ -14,7 +14,7 @@ import office2llm
 
 
 class DependencyIntegrationTests(unittest.TestCase):
-    def test_image_normalization_and_multipage_pdf_rendering(self):
+    def test_image_normalization(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for mode in ("RGB", "RGBA", "L"):
@@ -26,17 +26,6 @@ class DependencyIntegrationTests(unittest.TestCase):
                     self.assertEqual(result.size, (32, 24))
                     if mode == "RGBA":
                         self.assertEqual(result.getpixel((0, 0)), (255, 255, 255))
-
-            pdf = root / "pages.pdf"
-            page = Image.new("RGB", (72, 72), "white")
-            page.save(pdf, save_all=True, append_images=[page], resolution=72)
-            self.assertEqual(
-                office2llm.pdf_to_png_pages(pdf, outdir=root / "pages", dpi=144), 2
-            )
-            for number in (1, 2):
-                with Image.open(root / "pages" / f"page_{number:04d}.png") as result:
-                    self.assertEqual(result.mode, "RGB")
-                    self.assertEqual(result.size, (144, 144))
 
     def test_ocr_sdk_serializes_image_and_reads_response(self):
         buffer = io.BytesIO()

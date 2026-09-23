@@ -1,6 +1,7 @@
 import argparse
 import io
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -57,6 +58,62 @@ _ELIGIBLE_EXTENSIONS = {
     ".tiff",
     ".webp",
 }
+
+_PAGES_SUFFIX = "__pages__"
+
+
+def processed_output(input_path: Path, outdir: Path | None = None) -> Path | None:
+    for name in (input_path.stem, input_path.name):
+        for extension in (".txt", ".md"):
+            output = input_path.parent / f"{name}{extension}"
+            if output.is_file():
+                return output
+    if outdir is not None:
+        markdown = markdown_output_path(input_path, outdir)
+        if markdown.is_file():
+            return markdown
+        if outdir.is_dir() and any(
+            re.fullmatch(r"page_\d{4,}\.(png|txt)", path.name) and path.is_file()
+            for path in outdir.iterdir()
+        ):
+            return outdir
+    for directory in (
+        input_path.parent / f"{input_path.name}{_PAGES_SUFFIX}",
+        input_path.with_suffix(""),
+    ):
+        if directory.is_dir():
+            return directory
+    return None
+
+
+def discover_documents(
+    root: Path, *, recursive: bool, extensions: set[str]
+) -> list[Path]:
+    def raise_walk_error(error: OSError) -> None:
+        raise error
+
+    inputs = []
+    if root.name.endswith(_PAGES_SUFFIX):
+        return inputs
+    for directory, subdirs, filenames in os.walk(root, onerror=raise_walk_error):
+        legacy_outputs = {
+            Path(name).stem
+            for name in filenames
+            if Path(name).suffix.lower() in _ELIGIBLE_EXTENSIONS
+        }
+        subdirs[:] = [
+            name for name in subdirs
+            if recursive
+            and not name.endswith(_PAGES_SUFFIX)
+            and name not in legacy_outputs
+        ]
+        inputs.extend(
+            Path(directory) / name
+            for name in filenames
+            if Path(name).suffix.lower() in extensions
+            and (Path(directory) / name).is_file()
+        )
+    return sorted(inputs)
 
 
 def run_ocr(image: bytes | Path) -> str:
@@ -308,9 +365,16 @@ def process_document(
     dpi: int,
     timeout_s: int,
     fulltext_only: bool,
+    force_overwrite: bool = False,
 ) -> int:
     if fulltext_only and outdir is not None:
         raise SystemExit("--fulltext-only cannot be used with --outdir")
+
+    if not force_overwrite:
+        existing = processed_output(input_path, outdir)
+        if existing is not None:
+            print(f"skipped input={input_path} existing={existing}")
+            return 0
 
     if input_path.suffix.lower() in {".doc", ".docx"}:
         output_path = word_to_markdown_if_native(
@@ -335,11 +399,19 @@ def process_document(
     elif fulltext_only:
         resolved_outdir = Path(tempfile.mkdtemp(prefix="office2llm_pages_"))
     else:
-        resolved_outdir = (input_path.parent / input_path.stem).resolve()
+        resolved_outdir = input_path.parent / f"{input_path.name}{_PAGES_SUFFIX}"
 
     tmp_pdf: Path | None = None
     final_txt_path = input_path.parent / f"{input_path.name}.txt"
     try:
+        if resolved_outdir.resolve() == input_path.parent.resolve() and re.fullmatch(
+            r"page_\d{4,}\.(png|txt)", input_path.name
+        ):
+            raise RuntimeError("page output would overwrite the input file")
+        if not fulltext_only and force_overwrite and resolved_outdir.is_dir():
+            for artifact in resolved_outdir.iterdir():
+                if artifact.is_file() and re.fullmatch(r"page_\d{4,}\.(png|txt)", artifact.name):
+                    artifact.unlink()
         if input_path.suffix.lower() == ".pdf":
             pages = pdf_to_png_pages(input_path, outdir=resolved_outdir, dpi=dpi)
         elif input_path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".tif", ".tiff"}:
@@ -349,7 +421,6 @@ def process_document(
             pages = pdf_to_png_pages(tmp_pdf, outdir=resolved_outdir, dpi=dpi)
 
         ocr_ok = 0
-        ocr_skipped = 0
         ocr_failed = 0
         page_texts = [""] * pages
         if pages > 0:
@@ -359,9 +430,6 @@ def process_document(
                 for i in range(1, pages + 1):
                     png_path = resolved_outdir / f"page_{i:04d}.png"
                     txt_path = resolved_outdir / f"page_{i:04d}.txt"
-                    if not fulltext_only and txt_path.exists():
-                        ocr_skipped += 1
-                        continue
                     futures[ex.submit(run_ocr, png_path)] = (i - 1, txt_path)
 
                 for fut in as_completed(futures):
@@ -378,15 +446,16 @@ def process_document(
                         ocr_failed += 1
                         print(f"ocr failed file={txt_path.name} err={e}")
 
-        if fulltext_only and ocr_failed == 0:
+        if ocr_failed == 0:
             tmp_path = final_txt_path.with_suffix(final_txt_path.suffix + ".tmp")
             tmp_path.write_text("\n\n".join(page_texts), encoding="utf-8")
             tmp_path.replace(final_txt_path)
 
         print(
-            f"ok input={input_path} pages={pages} ocr_ok={ocr_ok} ocr_skipped={ocr_skipped} "
+            f"ok input={input_path} pages={pages} ocr_ok={ocr_ok} "
             f"ocr_failed={ocr_failed} "
-            f"{'output=' + str(final_txt_path) if fulltext_only else 'outdir=' + str(resolved_outdir)}"
+            f"output={final_txt_path}"
+            f"{'' if fulltext_only else ' outdir=' + str(resolved_outdir)}"
         )
         return 0 if ocr_failed == 0 else 2
     finally:
@@ -401,7 +470,7 @@ def main(argv: list[str] | None = None) -> int:
         description="Convert native Word files to Markdown or use full-page OCR when needed."
     )
     ap.add_argument(
-        "--input", required=True, help="Path to input file (doc/docx/pptx/xlsx/pdf/...)."
+        "--input", required=True, help="Path to an input file or folder."
     )
     ap.add_argument(
         "--outdir",
@@ -409,7 +478,8 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help=(
             "Output directory for page_XXXX.png and page_XXXX.txt files. "
-            "Default: create a sibling folder next to the input named after the input file (e.g. ./foo.docx -> ./foo/)."
+            "Single-file input only. Default: <filename.ext>__pages__/ beside the input. "
+            "Combined OCR text is always written beside the input."
         ),
     )
     ap.add_argument("--dpi", type=int, default=200, help="Render DPI (default: 200).")
@@ -419,7 +489,8 @@ def main(argv: list[str] | None = None) -> int:
         default=120,
         help="LibreOffice convert timeout seconds.",
     )
-    ap.add_argument(
+    output_mode = ap.add_mutually_exclusive_group()
+    output_mode.add_argument(
         "--fulltext-only",
         action="store_true",
         help=(
@@ -427,25 +498,77 @@ def main(argv: list[str] | None = None) -> int:
             ".md; OCR-routed inputs use <input-filename>.<ext>.txt."
         ),
     )
+    output_mode.add_argument(
+        "--keep-artifacts", dest="fulltext_only", action="store_false",
+        help="Keep page images and page OCR in addition to combined text (default).",
+    )
+    ap.set_defaults(fulltext_only=False)
+    ap.add_argument(
+        "--recursive", action="store_true", help="Include subfolders in a folder scan."
+    )
+    ap.add_argument(
+        "--extensions", nargs="+", metavar="EXT",
+        help="Only select these supported extensions, e.g. pdf .DOCX (default: all).",
+    )
+    ap.add_argument(
+        "--dry-run", action="store_true",
+        help="List pending and skipped inputs without writing files or calling OCR.",
+    )
+    overwrite = ap.add_mutually_exclusive_group()
+    overwrite.add_argument(
+        "--skip-processed", dest="force_overwrite", action="store_false",
+        help="Skip inputs with matching text, Markdown or artifact outputs (default).",
+    )
+    overwrite.add_argument(
+        "--force-overwrite", action="store_true",
+        help="Regenerate selected inputs, overwriting their outputs and page artifacts.",
+    )
+    ap.set_defaults(force_overwrite=False)
     args = ap.parse_args(argv)
+
+    extensions = _ELIGIBLE_EXTENSIONS
+    if args.extensions is not None:
+        extensions = {"." + value.lstrip(".").lower() for value in args.extensions}
+        unsupported = extensions - _ELIGIBLE_EXTENSIONS
+        if unsupported:
+            ap.error(f"unsupported extensions: {', '.join(sorted(unsupported))}")
+    if args.fulltext_only and args.outdir:
+        ap.error("--fulltext-only cannot be used with --outdir")
 
     input_path = Path(args.input).expanduser().resolve()
     if not input_path.exists():
         raise SystemExit(f"input not found: {input_path}")
 
-    if input_path.is_dir():
-        if args.outdir:
-            raise SystemExit("--outdir cannot be used when --input points to a directory")
-        inputs = sorted(
-            path
-            for path in input_path.iterdir()
-            if path.is_file() and path.suffix.lower() in _ELIGIBLE_EXTENSIONS
-        )
-        if not inputs:
-            raise SystemExit(f"no eligible documents found in: {input_path}")
+    is_directory = input_path.is_dir()
+    if is_directory and args.outdir:
+        ap.error("--outdir cannot be used when --input points to a directory")
+    outdir = Path(args.outdir).expanduser().resolve() if args.outdir else None
+    inputs = (
+        discover_documents(input_path, recursive=args.recursive, extensions=extensions)
+        if is_directory else [input_path]
+    )
+    pending = []
+    skipped = 0
+    for doc_path in inputs:
+        if doc_path.suffix.lower() not in extensions:
+            print(f"excluded input={doc_path} reason=extension")
+            continue
+        existing = None if args.force_overwrite else processed_output(doc_path, outdir)
+        if existing is not None:
+            skipped += 1
+            print(f"skipped input={doc_path} existing={existing}")
+        else:
+            pending.append(doc_path)
+            if args.dry_run:
+                print(f"pending input={doc_path}")
+    if args.dry_run or not pending:
+        print(f"{'dry-run' if args.dry_run else 'batch'} pending={len(pending)} skipped={skipped}")
+        return 0
+
+    if is_directory:
         try:
             answer = input(
-                f"Process {len(inputs)} documents in {input_path} and write sibling Markdown or OCR text files? [y/N] "
+                f"Process {len(pending)} documents in {input_path} and write sibling Markdown or OCR text files? [y/N] "
             )
         except EOFError:
             raise SystemExit("confirmation required for directory input")
@@ -453,14 +576,15 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit("cancelled")
 
         failures = 0
-        for doc_path in inputs:
+        for doc_path in pending:
             try:
                 exit_code = process_document(
                     doc_path,
                     outdir=None,
                     dpi=args.dpi,
                     timeout_s=args.timeout_s,
-                    fulltext_only=True,
+                    fulltext_only=args.fulltext_only,
+                    force_overwrite=args.force_overwrite,
                 )
             except Exception as e:
                 failures += 1
@@ -468,16 +592,17 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             if exit_code != 0:
                 failures += 1
-        print(f"batch processed={len(inputs)} failed={failures}")
+        print(f"batch selected={len(pending)} skipped={skipped} failed={failures}")
         return 0 if failures == 0 else 2
 
     try:
         return process_document(
             input_path,
-            outdir=Path(args.outdir) if args.outdir else None,
+            outdir=outdir,
             dpi=args.dpi,
             timeout_s=args.timeout_s,
             fulltext_only=args.fulltext_only,
+            force_overwrite=args.force_overwrite,
         )
     except RuntimeError as error:
         raise SystemExit(str(error)) from error
