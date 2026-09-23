@@ -118,12 +118,19 @@ def discover_documents(
     return sorted(inputs)
 
 
+def styled(text: str, code: str) -> str:
+    if sys.stdout.isatty() and "NO_COLOR" not in os.environ:
+        return f"\033[{code}m{text}\033[0m"
+    return text
+
+
+def print_path_status(title: str, path: Path, *, failed: bool = False) -> None:
+    print(styled(title, "1"))
+    print(styled(str(path), "31" if failed else "32"))
+    print("─" * min(len(str(path)), shutil.get_terminal_size().columns), flush=True)
+
+
 def print_scan_summary(paths: list[tuple[Path, Path | None]], metadata: dict[str, str]) -> None:
-    color = sys.stdout.isatty() and "NO_COLOR" not in os.environ
-
-    def styled(text: str, code: str) -> str:
-        return f"\033[{code}m{text}\033[0m" if color else text
-
     rule = "─" * min(
         max([len("Found Paths:"), *(len(str(path)) for path, _ in paths)]),
         shutil.get_terminal_size().columns,
@@ -135,6 +142,10 @@ def print_scan_summary(paths: list[tuple[Path, Path | None]], metadata: dict[str
     print(rule)
     print()
 
+    print_table(metadata)
+
+
+def print_table(metadata: dict[str, str]) -> None:
     key_width = max(len(key) for key in metadata)
     value_width = min(
         max(len(value) for value in metadata.values()),
@@ -410,6 +421,7 @@ def process_document(
             print(f"skipped input={input_path} existing={existing}")
             return 0
 
+    print_path_status("Proccessing:", input_path)
     if input_path.suffix.lower() in {".doc", ".docx"}:
         output_path = word_to_markdown_if_native(
             input_path, outdir=outdir, timeout_s=timeout_s
@@ -420,7 +432,8 @@ def process_document(
                 if input_path.suffix.lower() == ".doc"
                 else "pandoc"
             )
-            print(f"ok input={input_path} mode={mode} output={output_path}")
+            print_path_status("Processed:", input_path)
+            print_table({"mode": mode})
             return 0
 
     if not os.environ.get("GEMINI_API_KEY"):
@@ -478,19 +491,15 @@ def process_document(
                         ocr_ok += 1
                     except Exception as e:
                         ocr_failed += 1
-                        print(f"ocr failed file={txt_path.name} err={e}")
+                        print_table({"page": str(page_idx + 1), "error": str(e)})
 
         if ocr_failed == 0:
             tmp_path = final_txt_path.with_suffix(final_txt_path.suffix + ".tmp")
             tmp_path.write_text("\n\n".join(page_texts), encoding="utf-8")
             tmp_path.replace(final_txt_path)
 
-        print(
-            f"ok input={input_path} pages={pages} ocr_ok={ocr_ok} "
-            f"ocr_failed={ocr_failed} "
-            f"output={final_txt_path}"
-            f"{'' if fulltext_only else ' outdir=' + str(resolved_outdir)}"
-        )
+        print_path_status("Processed:", input_path, failed=bool(ocr_failed))
+        print_table({"pages": str(pages), "ocr_ok": str(ocr_ok), "ocr_failed": str(ocr_failed)})
         return 0 if ocr_failed == 0 else 2
     finally:
         if fulltext_only:
@@ -642,11 +651,13 @@ def main(argv: list[str] | None = None) -> int:
                 )
             except Exception as e:
                 failures += 1
-                print(f"failed input={doc_path} err={e}")
+                print_path_status("Failed:", doc_path, failed=True)
+                print_table({"error": str(e)})
                 continue
             if exit_code != 0:
                 failures += 1
-        print(f"batch selected={len(pending)} skipped={skipped} failed={failures}")
+        print(styled("Batch results:", "1"))
+        print_table({"selected": str(len(pending)), "skipped": str(skipped), "failed": str(failures)})
         return 0 if failures == 0 else 2
 
     try:

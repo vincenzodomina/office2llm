@@ -158,11 +158,20 @@ class FolderProcessingTests(unittest.TestCase):
                     root = Path(directory)
                     source = root / "report.pdf"
                     write_pdf(source)
-                    with cli_environment() as (_, send, _):
+                    with cli_environment() as (out, send, _):
                         self.assertEqual(office2llm.main([
                             "--input", str(root if folder else source), "--dpi", "144", *flags,
                         ]), 0)
                         self.assertEqual(send.call_count, 2)
+                        text = out.getvalue()
+                        self.assertIn(f"Proccessing:\n{source.resolve()}\n", text)
+                        self.assertIn(f"Processed:\n{source.resolve()}\n", text)
+                        result = text.split("Processed:\n", 1)[1]
+                        self.assertRegex(result, r"\| pages\s+\| 2\s+\|")
+                        self.assertRegex(result, r"\| ocr_ok\s+\| 2\s+\|")
+                        self.assertRegex(result, r"\| ocr_failed\s+\| 0\s+\|")
+                        self.assertNotIn("report.pdf.txt", result)
+                        self.assertNotIn("__pages__", result)
                     self.assertEqual((root / "report.pdf.txt").read_text(), "Page 255\n\nPage 0")
                     artifacts = root / "report.pdf__pages__"
                     self.assertEqual(artifacts.is_dir(), keep)
@@ -401,7 +410,7 @@ class FolderProcessingTests(unittest.TestCase):
             with cli_environment() as (out, send, _):
                 self.assertEqual(office2llm.main(["--input", str(root), "--fulltext-only"]), 2)
                 self.assertEqual(send.call_count, 1)
-                self.assertIn("failed=1", out.getvalue())
+                self.assertRegex(out.getvalue(), r"\| failed\s+\| 1\s+\|")
             self.assertEqual((root / "valid.png.txt").read_text(), "Page 255")
             self.assertFalse((root / "broken.pdf.txt").exists())
 

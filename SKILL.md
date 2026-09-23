@@ -189,7 +189,17 @@ page_0003.txt
 The CLI prints a summary when done:
 
 ```
-ok input=/path/to/report.pdf pages=8 ocr_ok=8 ocr_failed=0 output=/path/to/report.pdf.txt outdir=/path/to/report.pdf__pages__
+Proccessing:
+/path/to/report.pdf
+───────────────────
+Processed:
+/path/to/report.pdf
+───────────────────
++------------+---+
+| pages      | 8 |
+| ocr_ok     | 8 |
+| ocr_failed | 0 |
++------------+---+
 ```
 
 - **ocr_ok**: pages successfully OCR'd in this run
