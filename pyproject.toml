@@ -5,7 +5,7 @@ description = "Convert native Word documents to Markdown and fall back to full-p
 requires-python = ">=3.10"
 dependencies = [
   "pypdfium2==5.5.0",
-  "Pillow==12.1.1",
+  "Pillow==12.3.0",
   "google-genai==1.65.0",
 ]
 
