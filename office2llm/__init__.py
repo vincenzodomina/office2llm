@@ -619,7 +619,6 @@ def main(argv: list[str] | None = None) -> int:
             "Artifacts": "Not retained" if args.fulltext_only else str(outdir or "<filename.ext>__pages__/ beside input"),
             "Pending": str(len(pending)),
             "Skipped": str(skipped),
-            "Colors": "Pending: green; skipped: dim gray" if sys.stdout.isatty() and "NO_COLOR" not in os.environ else "Disabled (non-terminal or NO_COLOR)",
         })
     if args.dry_run:
         return 0
