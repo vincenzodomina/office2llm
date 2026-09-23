@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import httpx
+from google.genai.models import Models
 from PIL import Image
 
 import office2llm
@@ -44,7 +45,11 @@ class DependencyIntegrationTests(unittest.TestCase):
             )
 
         with patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=True):
-            with patch.object(httpx.Client, "send", send):
+            with (
+                patch.object(httpx.Client, "send", send),
+                patch.object(Models, "_logged_afc_warning", False),
+                self.assertNoLogs("google_genai.models", level="WARNING"),
+            ):
                 self.assertEqual(office2llm.run_ocr(image), "Extracted text")
 
         self.assertEqual(len(requests), 1)

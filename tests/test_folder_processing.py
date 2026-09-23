@@ -167,9 +167,8 @@ class FolderProcessingTests(unittest.TestCase):
                         self.assertIn(f"Proccessing:\n{source.resolve()}\n", text)
                         self.assertNotIn("Processed:", text)
                         result = text.split("Results:\n", 1)[1]
-                        self.assertTrue(result.startswith("+"))
+                        self.assertEqual(result.splitlines()[0], "| page: 2 | ocr_ok | 2 | ocr_failed | 0 |")
                         self.assertNotIn(str(source.resolve()), result)
-                        self.assertRegex(result, r"\| pages\s+\| 2\s+\|")
                         self.assertRegex(result, r"\| ocr_ok\s+\| 2\s+\|")
                         self.assertRegex(result, r"\| ocr_failed\s+\| 0\s+\|")
                         self.assertNotIn("report.pdf.txt", result)
@@ -318,11 +317,13 @@ class FolderProcessingTests(unittest.TestCase):
             write_pdf(source, ("white",))
             final = root / "report.pdf.txt"
             final.write_text("old text")
-            with cli_environment() as (_, send, _):
+            with cli_environment() as (out, send, _), patch.object(out, "isatty", return_value=True):
                 self.assertEqual(office2llm.main([
                     "--input", str(root), "--force-overwrite", "--fulltext-only",
                 ]), 0)
                 self.assertEqual(send.call_count, 1)
+                self.assertIn("\033[32mocr_ok | 1\033[0m", out.getvalue())
+                self.assertIn("\033[2;90mocr_failed | 0\033[0m", out.getvalue())
             self.assertEqual(final.read_text(), "Page 255")
             self.assertEqual(sorted(p.name for p in root.iterdir()), ["report.pdf", "report.pdf.txt"])
 
@@ -432,10 +433,16 @@ class FolderProcessingTests(unittest.TestCase):
                     if existing:
                         final.write_text("previous successful output")
                     flags = ["--fulltext-only"] if fulltext else []
-                    with cli_environment(response=reject), patch.object(office2llm.time, "sleep"):
+                    with (
+                        cli_environment(response=reject) as (out, _, _),
+                        patch.object(office2llm.time, "sleep"),
+                        patch.object(out, "isatty", return_value=True),
+                    ):
                         self.assertEqual(office2llm.main([
                             "--input", str(source), "--force-overwrite", *flags,
                         ]), 2)
+                        self.assertIn("\033[2;90mocr_ok | 0\033[0m", out.getvalue())
+                        self.assertIn("\033[31mocr_failed | 1\033[0m", out.getvalue())
                     self.assertEqual(final.exists(), existing)
                     if existing:
                         self.assertEqual(final.read_text(), "previous successful output")

@@ -202,6 +202,7 @@ def run_ocr(image: bytes | Path) -> str:
                         ),
                     ],
                     config=types.GenerateContentConfig(
+                        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                         system_instruction=_EXTRACTION_PROMPT,
                         thinking_config=types.ThinkingConfig(
                             thinking_level="HIGH",
@@ -502,7 +503,9 @@ def process_document(
             tmp_path.replace(final_txt_path)
 
         print(styled("Results:", "1"))
-        print_table({"pages": str(pages), "ocr_ok": str(ocr_ok), "ocr_failed": str(ocr_failed)})
+        ok_result = styled(f"ocr_ok | {ocr_ok}", "32" if ocr_ok > 0 else "2;90")
+        failed_result = styled(f"ocr_failed | {ocr_failed}", "31" if ocr_failed > 0 else "2;90")
+        print(f"| page: {pages} | {ok_result} | {failed_result} |")
         return 0 if ocr_failed == 0 else 2
     finally:
         if fulltext_only:
