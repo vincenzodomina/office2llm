@@ -4,7 +4,9 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
+import textwrap
 import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -116,6 +118,51 @@ def discover_documents(
     return sorted(inputs)
 
 
+def styled(text: str, code: str) -> str:
+    if sys.stdout.isatty() and "NO_COLOR" not in os.environ:
+        return f"\033[{code}m{text}\033[0m"
+    return text
+
+
+def print_path_status(title: str, path: Path, *, failed: bool = False) -> None:
+    print(styled(title, "1"))
+    print(styled(str(path), "31" if failed else "32"), flush=True)
+
+
+def print_scan_summary(paths: list[tuple[Path, Path | None]], metadata: dict[str, str]) -> None:
+    rule = "─" * min(
+        max([len("Found Paths:"), *(len(str(path)) for path, _ in paths)]),
+        shutil.get_terminal_size().columns,
+    )
+    print(styled("Found Paths:", "1"))
+    print(rule)
+    for path, existing in paths:
+        print(styled(str(path), "2;90" if existing is not None else "32"))
+    print(rule)
+    print()
+
+    print_table(metadata)
+
+
+def print_table(metadata: dict[str, str]) -> None:
+    key_width = max(len(key) for key in metadata)
+    value_width = min(
+        max(len(value) for value in metadata.values()),
+        max(20, shutil.get_terminal_size().columns - key_width - 7),
+    )
+    border = f"+-{'-' * key_width}-+-{'-' * value_width}-+"
+    print(border)
+    for key, value in metadata.items():
+        for index, line in enumerate(textwrap.wrap(value, width=value_width, break_on_hyphens=False)):
+            row = f"| {key if index == 0 else '':<{key_width}} | {line:<{value_width}} |"
+            if value.casefold() in {"false", "no", "not retained"} or key == "Skipped":
+                row = styled(row, "2;90")
+            elif key == "Pending":
+                row = styled(row, "32")
+            print(row)
+    print(border)
+
+
 def run_ocr(image: bytes | Path) -> str:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -154,6 +201,7 @@ def run_ocr(image: bytes | Path) -> str:
                         ),
                     ],
                     config=types.GenerateContentConfig(
+                        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                         system_instruction=_EXTRACTION_PROMPT,
                         thinking_config=types.ThinkingConfig(
                             thinking_level="HIGH",
@@ -376,6 +424,7 @@ def process_document(
             print(f"skipped input={input_path} existing={existing}")
             return 0
 
+    print_path_status("Proccessing:", input_path)
     if input_path.suffix.lower() in {".doc", ".docx"}:
         output_path = word_to_markdown_if_native(
             input_path, outdir=outdir, timeout_s=timeout_s
@@ -386,7 +435,8 @@ def process_document(
                 if input_path.suffix.lower() == ".doc"
                 else "pandoc"
             )
-            print(f"ok input={input_path} mode={mode} output={output_path}")
+            print(styled("Results:", "1"))
+            print_table({"mode": mode})
             return 0
 
     if not os.environ.get("GEMINI_API_KEY"):
@@ -444,19 +494,17 @@ def process_document(
                         ocr_ok += 1
                     except Exception as e:
                         ocr_failed += 1
-                        print(f"ocr failed file={txt_path.name} err={e}")
+                        print_table({"page": str(page_idx + 1), "error": str(e)})
 
         if ocr_failed == 0:
             tmp_path = final_txt_path.with_suffix(final_txt_path.suffix + ".tmp")
             tmp_path.write_text("\n\n".join(page_texts), encoding="utf-8")
             tmp_path.replace(final_txt_path)
 
-        print(
-            f"ok input={input_path} pages={pages} ocr_ok={ocr_ok} "
-            f"ocr_failed={ocr_failed} "
-            f"output={final_txt_path}"
-            f"{'' if fulltext_only else ' outdir=' + str(resolved_outdir)}"
-        )
+        print(styled("Results:", "1"))
+        ok_result = styled(f"ocr_ok | {ocr_ok}", "32" if ocr_ok > 0 else "2;90")
+        failed_result = styled(f"ocr_failed | {ocr_failed}", "31" if ocr_failed > 0 else "2;90")
+        print(f"| page: {pages} | {ok_result} | {failed_result} |")
         return 0 if ocr_failed == 0 else 2
     finally:
         if fulltext_only:
@@ -549,20 +597,39 @@ def main(argv: list[str] | None = None) -> int:
     )
     pending = []
     skipped = 0
+    found = []
     for doc_path in inputs:
         if doc_path.suffix.lower() not in extensions:
-            print(f"excluded input={doc_path} reason=extension")
+            if not args.dry_run:
+                print(f"excluded input={doc_path} reason=extension")
             continue
         existing = None if args.force_overwrite else processed_output(doc_path, outdir)
+        if args.dry_run:
+            found.append((doc_path, existing))
         if existing is not None:
             skipped += 1
-            print(f"skipped input={doc_path} existing={existing}")
+            if not args.dry_run and not is_directory:
+                print(f"skipped input={doc_path} existing={existing}")
         else:
             pending.append(doc_path)
-            if args.dry_run:
-                print(f"pending input={doc_path}")
-    if args.dry_run or not pending:
-        print(f"{'dry-run' if args.dry_run else 'batch'} pending={len(pending)} skipped={skipped}")
+    if args.dry_run or is_directory:
+        print_scan_summary(found if args.dry_run else [(path, None) for path in pending], {
+            "Mode": "Dry run" if args.dry_run else "Process",
+            "Input": str(input_path),
+            "Recursive": "Yes" if args.recursive else "No",
+            "Extensions": ", ".join(sorted(extensions)) if args.extensions else "All supported",
+            "Force overwrite": "Yes" if args.force_overwrite else "No",
+            "OCR output": "<filename.ext>.txt beside input",
+            "Native output": str(outdir / "<stem>.md") if outdir else "<stem>.md beside input",
+            "Artifacts": "Not retained" if args.fulltext_only else str(outdir or "<filename.ext>__pages__/ beside input"),
+            "Pending": str(len(pending)),
+            "Skipped": str(skipped),
+        })
+    if args.dry_run:
+        return 0
+    if not pending:
+        if not is_directory:
+            print(f"batch pending={len(pending)} skipped={skipped}")
         return 0
 
     if is_directory:
@@ -588,11 +655,13 @@ def main(argv: list[str] | None = None) -> int:
                 )
             except Exception as e:
                 failures += 1
-                print(f"failed input={doc_path} err={e}")
+                print_path_status("Failed:", doc_path, failed=True)
+                print_table({"error": str(e)})
                 continue
             if exit_code != 0:
                 failures += 1
-        print(f"batch selected={len(pending)} skipped={skipped} failed={failures}")
+        print(styled("Batch results:", "1"))
+        print_table({"selected": str(len(pending)), "skipped": str(skipped), "failed": str(failures)})
         return 0 if failures == 0 else 2
 
     try:

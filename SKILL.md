@@ -189,11 +189,17 @@ page_0003.txt
 The CLI prints a summary when done:
 
 ```
-ok input=/path/to/report.pdf pages=8 ocr_ok=8 ocr_failed=0 output=/path/to/report.pdf.txt outdir=/path/to/report.pdf__pages__
+Proccessing:
+/path/to/report.pdf
+Results:
+| page: 8 | ocr_ok | 8 | ocr_failed | 0 |
 ```
 
 - **ocr_ok**: pages successfully OCR'd in this run
 - **ocr_failed**: pages where OCR failed (exit code 2 if any failures)
+
+Nonzero `ocr_ok` counts are green, nonzero `ocr_failed` counts are red, and zero
+counts are dim gray in terminals. Automatic function calling is disabled for OCR.
 
 Combined text is replaced only when all pages succeed. Forced regeneration removes
 stale numbered page PNG/text files, preserves unrelated files, and never reuses
