@@ -272,6 +272,8 @@ class FolderProcessingTests(unittest.TestCase):
                         self.assertIn("\033[1mFound Paths:\033[0m", text)
                         self.assertIn(f"\033[32m{(root / 'fresh.pdf').resolve()}\033[0m", text)
                         self.assertIn(f"\033[2;90m{(root / 'done.pdf').resolve()}\033[0m", text)
+                        self.assertRegex(text, r"\x1b\[2;90m\| Recursive\s+\| No\s+\|\x1b\[0m")
+                        self.assertRegex(text, r"\x1b\[2;90m\| Force overwrite\s+\| No\s+\|\x1b\[0m")
                     plain = re.sub(r"\x1b\[[0-9;]*m", "", text)
                     self.assertRegex(plain, r"\| OCR output\s+\| <filename.ext>.txt beside input")
                     send.assert_not_called()

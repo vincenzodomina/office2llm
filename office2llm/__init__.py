@@ -156,8 +156,11 @@ def print_table(metadata: dict[str, str]) -> None:
     for key, value in metadata.items():
         for index, line in enumerate(textwrap.wrap(value, width=value_width, break_on_hyphens=False)):
             row = f"| {key if index == 0 else '':<{key_width}} | {line:<{value_width}} |"
-            print(styled(row, "32" if key == "Pending" else "2;90")
-                  if key in {"Pending", "Skipped"} else row)
+            if value.casefold() in {"false", "no", "not retained"} or key == "Skipped":
+                row = styled(row, "2;90")
+            elif key == "Pending":
+                row = styled(row, "32")
+            print(row)
     print(border)
 
 
