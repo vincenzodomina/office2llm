@@ -13,6 +13,7 @@ Convert native Word documents into Markdown and use full-page OCR when visual co
 ## Requirements
 
 - **Python**: 3.10+
+- **macOS**: 13+ for the bundled PDFium binary
 - **Pandoc**: required for image-free Word conversion
 - **Gemini API key**: required only when the input routes to OCR
   - Export `GEMINI_API_KEY` before running.
