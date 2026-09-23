@@ -202,7 +202,8 @@ main() {
   "${VENV_DIR}/bin/python" -m pip install -U pip >/dev/null
 
   say "Installing office2llm from local repo checkout..."
-  "${VENV_DIR}/bin/pip" install -e "${REPO_ROOT}"
+  "${VENV_DIR}/bin/pip" install --require-hashes -r "${REPO_ROOT}/requirements.txt"
+  "${VENV_DIR}/bin/pip" install --no-deps -e "${REPO_ROOT}"
 
   say "Linking binary into ${BIN_DIR}..."
   mkdir -p "${BIN_DIR}"
