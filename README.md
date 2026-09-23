@@ -40,6 +40,23 @@ If `office2llm` is not found afterwards:
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
+## Dependency maintenance
+
+Runtime dependencies are pinned with hashes in `requirements.txt`, used by both
+the installer and Docker. After editing `pyproject.toml`, regenerate the lock with
+uv 0.8.22:
+
+```bash
+uv pip compile pyproject.toml --universal --python-version 3.10 --generate-hashes -o requirements.txt
+```
+
+Use `--upgrade-package PACKAGE` for a targeted transitive update. Verify with
+`uvx pip-audit==2.10.1 -r requirements.txt --require-hashes` and
+`python -m unittest discover -s tests -v` in the installed environment.
+CI runs the audit and tests; Dependabot checks Python and GitHub Actions weekly.
+The locked cryptography release no longer provides Intel macOS support; use the
+Linux Docker image on Intel Macs. Apple Silicon macOS and Linux are supported.
+
 ## Quick start
 
 ```bash

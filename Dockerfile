@@ -17,7 +17,9 @@ RUN apt-get update && \
 
 WORKDIR /app
 COPY pyproject.toml /app/pyproject.toml
+COPY requirements.txt /app/requirements.txt
 COPY office2llm /app/office2llm
-RUN pip install --no-cache-dir /app
+RUN pip install --no-cache-dir --require-hashes -r /app/requirements.txt && \
+    pip install --no-cache-dir --no-deps /app
 
 ENTRYPOINT ["office2llm"]
