@@ -139,6 +139,8 @@ terminal, pending paths are green and skipped paths are dim gray; a key/value ta
 shows counts, filters, and output settings. Redirected output is plain text, and
 `NO_COLOR` disables terminal styling.
 Actual folder processing asks for confirmation; an empty or fully processed selection exits successfully.
+Before confirmation, normal runs show the same table and path-list layout, listing
+only pending paths in green. Skipped paths are omitted, with their count in the table.
 
 Output modes work identically for files and folders:
 

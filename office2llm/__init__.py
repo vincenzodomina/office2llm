@@ -118,7 +118,7 @@ def discover_documents(
     return sorted(inputs)
 
 
-def print_dry_run(paths: list[tuple[Path, Path | None]], metadata: dict[str, str]) -> None:
+def print_scan_summary(paths: list[tuple[Path, Path | None]], metadata: dict[str, str]) -> None:
     color = sys.stdout.isatty() and "NO_COLOR" not in os.environ
 
     def styled(text: str, code: str) -> str:
@@ -594,13 +594,13 @@ def main(argv: list[str] | None = None) -> int:
             found.append((doc_path, existing))
         if existing is not None:
             skipped += 1
-            if not args.dry_run:
+            if not args.dry_run and not is_directory:
                 print(f"skipped input={doc_path} existing={existing}")
         else:
             pending.append(doc_path)
-    if args.dry_run:
-        print_dry_run(found, {
-            "Mode": "Dry run",
+    if args.dry_run or is_directory:
+        print_scan_summary(found if args.dry_run else [(path, None) for path in pending], {
+            "Mode": "Dry run" if args.dry_run else "Process",
             "Input": str(input_path),
             "Recursive": "Yes" if args.recursive else "No",
             "Extensions": ", ".join(sorted(extensions)) if args.extensions else "All supported",
@@ -612,9 +612,11 @@ def main(argv: list[str] | None = None) -> int:
             "Skipped": str(skipped),
             "Colors": "Pending: green; skipped: dim gray" if sys.stdout.isatty() and "NO_COLOR" not in os.environ else "Disabled (non-terminal or NO_COLOR)",
         })
+    if args.dry_run:
         return 0
     if not pending:
-        print(f"batch pending={len(pending)} skipped={skipped}")
+        if not is_directory:
+            print(f"batch pending={len(pending)} skipped={skipped}")
         return 0
 
     if is_directory:

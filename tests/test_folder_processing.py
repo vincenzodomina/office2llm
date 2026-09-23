@@ -101,8 +101,12 @@ class FolderProcessingTests(unittest.TestCase):
                         self.assertEqual(office2llm.main([
                             "--input", str(root if folder else source), "--skip-processed",
                         ]), 0)
-                        self.assertIn(f"existing={marker.resolve()}", out.getvalue())
-                        self.assertIn("skipped=1", out.getvalue())
+                        if folder:
+                            self.assertNotIn(str(source.resolve()), out.getvalue())
+                            self.assertRegex(out.getvalue(), r"\| Skipped\s+\| 1\s+\|")
+                        else:
+                            self.assertIn(f"existing={marker.resolve()}", out.getvalue())
+                            self.assertIn("skipped=1", out.getvalue())
                         send.assert_not_called()
                         prompt.assert_not_called()
                     if marker.is_file():
@@ -264,6 +268,36 @@ class FolderProcessingTests(unittest.TestCase):
                     send.assert_not_called()
                     prompt.assert_not_called()
 
+    def test_normal_folder_preview_lists_only_pending_paths_before_confirmation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "fresh.pdf"
+            source.touch()
+            (root / "done.pdf").touch()
+            (root / "done.md").write_text("existing")
+            with cli_environment() as (out, send, prompt):
+                def decline(question):
+                    text = out.getvalue()
+                    self.assertIn("\033[1mFound Paths:\033[0m", text)
+                    self.assertIn(f"\033[32m{source.resolve()}\033[0m", text)
+                    self.assertNotIn("done.pdf", text)
+                    self.assertNotIn("done.md", text)
+                    self.assertNotIn("skipped input=", text)
+                    plain = re.sub(r"\x1b\[[0-9;]*m", "", text)
+                    self.assertRegex(plain, r"\| Pending\s+\| 1\s+\|")
+                    self.assertRegex(plain, r"\| Skipped\s+\| 1\s+\|")
+                    self.assertIn("Process 1 documents", question)
+                    send.assert_not_called()
+                    return "no"
+
+                prompt.side_effect = decline
+                with patch.object(out, "isatty", return_value=True):
+                    with self.assertRaisesRegex(SystemExit, "cancelled"):
+                        office2llm.main(["--input", str(root)])
+                prompt.assert_called_once()
+                send.assert_not_called()
+            self.assertFalse((root / "fresh.pdf.txt").exists())
+
     def test_forced_fulltext_run_overwrites_final_text_without_creating_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -340,7 +374,7 @@ class FolderProcessingTests(unittest.TestCase):
             (root / "report.docx").touch()
             with cli_environment(api_key="") as (out, send, prompt):
                 self.assertEqual(office2llm.main(["--input", str(root), "--extensions", "pdf"]), 0)
-                self.assertIn("pending=0", out.getvalue())
+                self.assertRegex(out.getvalue(), r"\| Pending\s+\| 0\s+\|")
                 send.assert_not_called()
                 prompt.assert_not_called()
 
