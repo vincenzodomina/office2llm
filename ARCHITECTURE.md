@@ -6,8 +6,16 @@
 - **OCR path**: Word files with any embedded image, other Office formats, PDFs, and images use per-page rendering and OCR.
 
 The OCR path produces:
+- **Combined text**: `<filename.ext>.txt` beside the input after all pages succeed
 - **Page images**: `page_XXXX.png`
 - **OCR text**: `page_XXXX.txt`
+
+Page artifacts are retained in `<filename.ext>__pages__/` by default, or generated
+temporarily under `--fulltext-only`. Both modes apply to individual files and batches.
+Folder discovery uses an optional recursive walk with an extension allowlist and
+prunes generated artifact directories. Dry runs and execution share selection and
+processed-output detection. Existing text, Markdown, or matching artifact folders
+skip the document before conversion; `--force-overwrite` regenerates all pages.
 
 It supports Office formats by converting them into a PDF first, then rendering pages to images and extracting OCR text per page via an external LLM-powered OCR service.
 
@@ -44,11 +52,10 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-  A[page_XXXX.png exists] --> B{page_XXXX.txt exists?}
-  B -->|Yes| C[Skip OCR for this page]
-  B -->|No| D[Send image to OCR service]
+  A[Document selected: no existing marker or forced] --> D[Send rendered page to OCR service]
   D --> E[Receive extracted text]
-  E --> F[Atomically write page_XXXX.txt]
+  E --> F[Retain page text if requested]
+  F --> G[Write sibling combined text after all pages succeed]
 ```
 
 ### Sequence diagram (happy path)
@@ -83,7 +90,7 @@ sequenceDiagram
 
 ### Key architectural properties
 - **Deterministic outputs**: stable naming (`page_XXXX.*`) enables downstream indexing and predictable diffs.
-- **Resumability**: existing `page_XXXX.txt` can be treated as “already processed” to make reruns cheap and safe.
+- **Repeat-run safety**: existing text, Markdown, or artifact directories skip the document. Incomplete runs require explicit forced regeneration.
 - **Batch resilience**: partial OCR failures do not prevent other pages from being processed; failures are surfaced in a final summary and exit status.
 - **Bounded parallelism**: OCR is performed concurrently but with a small cap to reduce the risk of quota/rate-limit issues.
 - **Atomic writes**: text outputs are written in a way that avoids leaving partially-written files on interruption.
@@ -98,10 +105,11 @@ sequenceDiagram
 
 ### External interfaces
 - **CLI inputs**
-  - Input file path
+  - Input file or folder path, optional recursion and extension filter
   - Optional output directory
   - Optional rendering-quality controls
 - **CLI outputs**
   - One Markdown file for an image-free Word document
+  - One sibling combined OCR text file after every page succeeds
   - `page_XXXX.png` and `page_XXXX.txt` per page
   - A single-line summary and a process exit code indicating success/partial failure

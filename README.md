@@ -123,18 +123,60 @@ This writes:
 
 No output folder is kept in this mode.
 
-### Convert every eligible document in a folder
+### Scan or convert a folder
 
 ```bash
-yes | office2llm --input /path/to/folder
+office2llm --input /path/to/folder --recursive --extensions pdf docx --dry-run
+yes | office2llm --input /path/to/folder --recursive --extensions pdf docx --fulltext-only
 ```
 
-When `--input` points to a folder, the CLI asks for confirmation and then processes each eligible document or image in that folder in fulltext-only mode, writing sibling files like:
+Folder scans are non-recursive by default. Add `--recursive` to include subfolders.
+`--extensions` accepts one or more supported extensions, case-insensitively and with
+or without a dot (`pdf`, `.PDF`, `docx`). Without it, all supported formats are selected.
+Dry runs list pending and skipped files without conversion, API calls, writes, or confirmation.
+Actual folder processing asks for confirmation; an empty or fully processed selection exits successfully.
+
+Output modes work identically for files and folders:
+
+- `--keep-artifacts` (default) keeps page images and per-page OCR in
+  `<filename.ext>__pages__/`, and writes combined text beside the source.
+- `--fulltext-only` writes the combined result and removes this run's temporary
+  artifacts. It does not remove artifacts retained by earlier runs.
+
+Sibling outputs include:
 
 - `/path/to/folder/example.pdf.txt`
 - `/path/to/folder/report.md` for image-free DOCX or DOC
 - `/path/to/folder/illustrated.docx.txt` for Word files routed to OCR
 - `/path/to/folder/photo.jpg.txt`
+
+### Skip processed documents or regenerate them
+
+`--skip-processed` is the default. For `report.pdf`, any of these existing outputs
+causes a skip before conversion or credential checks:
+
+- `report.txt`, `report.pdf.txt`, `report.md`, or `report.pdf.md`
+- `report.pdf__pages__/` or the legacy `report/` directory
+
+An empty output file or matching directory also counts as processed. To retry an
+incomplete run or regenerate output, use `--force-overwrite`. This bypasses every
+processed marker and regenerates every page; it removes stale numbered page images
+and text in the selected artifact directory while preserving unrelated files.
+The combined text is replaced only after every page succeeds.
+
+```bash
+office2llm --input /path/to/folder --recursive --extensions pdf --force-overwrite --keep-artifacts
+```
+
+Recursive scans always exclude directories ending in `__pages__`, plus legacy
+directories whose names match the stem of a supported sibling input. They do not
+follow directory symlinks. The forgiving legacy rules can also match unrelated
+same-stem outputs; `--force-overwrite` bypasses document skips, but artifact
+directories remain excluded from discovery.
+
+For single-file `--outdir`, existing page artifacts and native Markdown outputs
+are also recognized. `--outdir` is unavailable for folder input and cannot be
+combined with `--fulltext-only`.
 
 ### Tune timeouts (Office → PDF step)
 
@@ -144,13 +186,21 @@ office2llm --input ./big.xlsx --timeout-s 300
 
 ## Output
 
-Image-free Word files produce one Markdown file. OCR-routed inputs write:
-- `page_0001.png`
-- `page_0002.png`
-- …
-- `page_0001.txt`
-- `page_0002.txt`
-- …
+Image-free Word files produce one Markdown file, without OCR artifacts in either
+output mode. Successful OCR runs always write `<filename.ext>.txt` beside the input.
+With artifacts retained, `report.pdf` additionally produces:
+
+```text
+report.pdf.txt
+report.pdf__pages__/
+  page_0001.png
+  page_0001.txt
+  page_0002.png
+  page_0002.txt
+```
+
+`report.png` uses its own `report.png__pages__/` directory. A custom `--outdir`
+changes only the OCR artifact location; combined OCR text stays beside the input.
 
 PNG output is deterministic and “OCR-friendly” (no alpha channel).
 

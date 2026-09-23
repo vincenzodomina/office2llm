@@ -60,16 +60,22 @@ export PATH="$HOME/.local/bin:$PATH"
 ## CLI reference
 
 ```
-office2llm --input <file-or-folder> [--outdir <dir>] [--dpi <int>] [--timeout-s <int>] [--fulltext-only]
+office2llm --input <file-or-folder> [--recursive] [--extensions pdf docx] [--dry-run] [--force-overwrite] [--fulltext-only | --keep-artifacts] [--outdir <dir>] [--dpi <int>] [--timeout-s <int>]
 ```
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--input` | *(required)* | Path to input file |
-| `--outdir` | input-dependent | Where to write Markdown or OCR page artifacts |
+| `--input` | *(required)* | Path to an input file or folder |
+| `--outdir` | input-dependent | Single-file Markdown or OCR artifact directory; combined OCR text stays beside input |
 | `--dpi` | `200` | Render resolution (higher = sharper but larger files) |
 | `--timeout-s` | `120` | Max seconds for the LibreOffice conversion step |
 | `--fulltext-only` | `false` | Write one sibling output: `.md` for native Word or `.txt` for OCR |
+| `--keep-artifacts` | `true` | Retain page PNG/text in `<filename.ext>__pages__/`, plus sibling combined text |
+| `--recursive` | `false` | Include subfolders, excluding generated artifact directories |
+| `--extensions` | all supported | Restrict inputs to these extensions; case-insensitive, optional leading dots |
+| `--dry-run` | `false` | List pending/skipped inputs without writes, API calls, or confirmation |
+| `--skip-processed` | `true` | Skip matching text, Markdown, or artifact outputs |
+| `--force-overwrite` | `false` | Bypass processed markers and regenerate every page |
 
 ## Use cases
 
@@ -121,15 +127,29 @@ No output folder is kept in this mode.
 ### Convert every eligible document in a folder
 
 ```bash
-yes | office2llm --input /path/to/folder
+office2llm --input /path/to/folder --recursive --extensions pdf docx --dry-run
+yes | office2llm --input /path/to/folder --recursive --extensions pdf docx --fulltext-only
 ```
 
-This confirms the interactive prompt automatically and writes sibling outputs like:
+The first command previews pending files. The second confirms the folder prompt
+automatically and writes sibling outputs like:
 
 - `/path/to/folder/example.pdf.txt`
 - `/path/to/folder/report.md` for an image-free DOCX or DOC
 - `/path/to/folder/illustrated.docx.txt` for an OCR-routed Word file
 - `/path/to/folder/photo.jpg.txt`
+
+Omit `--recursive` to scan only immediate children. Without `--extensions`, all
+supported formats are selected. Output modes are the same for files and folders;
+omit `--fulltext-only` or pass `--keep-artifacts` to retain page PNG/text as well.
+
+For `report.pdf`, `report.txt`, `report.pdf.txt`, `report.md`, `report.pdf.md`,
+`report.pdf__pages__/`, or the legacy `report/` directory prevents reprocessing.
+Empty markers count too; use `--force-overwrite` to regenerate incomplete runs.
+Custom single-file `--outdir` page artifacts and native Markdown are also recognized.
+Recursive discovery excludes `__pages__` directories and legacy directories named
+after a supported sibling input's stem, even under `--force-overwrite`. Directory
+symlinks are not traversed. Empty selections exit successfully without prompting.
 
 ### Convert a large spreadsheet (increase timeout)
 
@@ -152,7 +172,9 @@ docker compose run --rm office2llm --input /data/in.pptx --outdir /data/out --dp
 
 ## Output
 
-An image-free Word file produces one Markdown file. OCR-routed inputs produce sequentially numbered PNGs and corresponding OCR text files:
+An image-free Word file produces one Markdown file. Every successful OCR run writes
+`<filename.ext>.txt` beside its source. With artifacts retained, sequential PNGs and
+page text are stored inside `<filename.ext>__pages__/` (or single-file `--outdir`):
 
 ```
 page_0001.png
@@ -167,12 +189,15 @@ page_0003.txt
 The CLI prints a summary when done:
 
 ```
-ok pages=8 ocr_ok=8 ocr_skipped=0 ocr_failed=0 outdir=/path/to/output
+ok input=/path/to/report.pdf pages=8 ocr_ok=8 ocr_failed=0 output=/path/to/report.pdf.txt outdir=/path/to/report.pdf__pages__
 ```
 
 - **ocr_ok**: pages successfully OCR'd in this run
-- **ocr_skipped**: pages whose `.txt` already existed (incremental/resumable)
 - **ocr_failed**: pages where OCR failed (exit code 2 if any failures)
+
+Combined text is replaced only when all pages succeed. Forced regeneration removes
+stale numbered page PNG/text files, preserves unrelated files, and never reuses
+cached OCR. `--fulltext-only` removes only the current run's temporary artifacts.
 
 ## Requirements
 

@@ -4,10 +4,10 @@
 `office2llm` converts image-free Word files to Markdown. DOCX uses Pandoc directly; legacy DOC uses LibreOffice as a temporary DOCX bridge. Word files with embedded images and all other supported inputs use per-page rendering and OCR.
 
 ### Goals
-- **One-command batch conversion** from a single input document to per-page outputs.
+- **One-command batch conversion** from a file or folder, with optional recursive discovery.
 - **Native Word extraction** through Pandoc without an OCR API key when no images are embedded.
 - **High-fidelity OCR text** that captures all readable text and preserves semantic structure (lists, tables, key/value lines).
-- **Deterministic, resumable outputs** so repeated runs are safe and predictable.
+- **Deterministic outputs and processed-file detection** so repeated runs are safe and predictable.
 
 ### Non-goals
 - **Interactive UI** for editing or reviewing OCR results.
@@ -19,16 +19,20 @@
 - **Automation scripts** converting document batches in CI or scheduled jobs.
 
 ### User experience (happy path)
-- The user runs the CLI with an input document path and optionally an output directory.
+- The user runs the CLI with an input file or folder, optionally previews it with `--dry-run`, and selects an output mode.
 - An image-free DOCX or DOC produces a single Markdown file.
-- An OCR-routed input produces an output directory containing:
+- A successful OCR input always produces a sibling `<filename.ext>.txt`. By default it also produces `<filename.ext>__pages__/` containing:
   - `page_0001.png`, `page_0002.png`, …
   - `page_0001.txt`, `page_0002.txt`, …
 - The user ingests the `.txt` files (and optionally keeps `.png` files for traceability/auditing).
 
 ### Functional requirements
 - **Inputs**
-  - The tool shall accept a single local file path as input.
+  - The tool shall accept a local file or folder path as input.
+  - Folder discovery shall be non-recursive by default, with `--recursive` to include subfolders.
+  - `--extensions` shall optionally restrict discovery to supported extensions, ignoring case and optional leading dots.
+  - Discovery shall exclude `__pages__` directories and legacy directories matching a supported sibling input's stem; directory symlinks shall not be followed.
+  - `--dry-run` shall list pending and skipped inputs without conversion, writes, API calls, or confirmation.
   - The tool shall support common Office document formats and PDFs.
   - The tool shall fail with a clear error message if the input file does not exist or cannot be read.
 
@@ -38,6 +42,8 @@
   - The tool shall produce exactly one page image per page, named `page_XXXX.png` (zero-padded).
   - The tool shall produce exactly one OCR text file per page, named `page_XXXX.txt` (zero-padded).
   - Each `page_XXXX.txt` shall be written alongside its corresponding `page_XXXX.png`.
+  - Combined OCR text shall always be written beside the input, including when `--outdir` changes the artifact location.
+  - `--keep-artifacts` (default) and `--fulltext-only` shall work identically for file and folder inputs; native Word shall keep its Markdown route.
 
 - **OCR behavior**
   - A Word file with any embedded image shall use the full-page OCR path for the complete document.
@@ -47,8 +53,10 @@
   - The OCR output shall not add invented text, labels, preambles, or commentary.
   - If a page contains no readable text, the tool shall write an empty text file for that page.
 
-- **Resumability**
-  - By default, if `page_XXXX.txt` already exists, the tool shall skip generating OCR for that page.
+- **Processed-file detection**
+  - `--skip-processed` shall be enabled by default. Sibling `.txt` or `.md` outputs using either the source stem or full filename, new artifact folders, and legacy stem folders shall prevent reprocessing, including empty markers.
+  - `--force-overwrite` shall bypass these checks and regenerate every page, removing stale numbered artifacts but preserving unrelated files.
+  - Failed or incomplete output folders shall require `--force-overwrite` to retry. Combined text shall only be replaced on full success.
 
 - **Reliability & error handling**
   - The tool shall continue processing remaining pages if OCR fails for a subset of pages.
@@ -65,6 +73,7 @@
 ### Acceptance criteria
 - Running on an image-free DOCX or DOC without OCR credentials produces a Markdown file through Pandoc.
 - Running on an OCR-routed multi-page input produces matching sets of `page_XXXX.png` and `page_XXXX.txt` for every page.
-- Re-running the tool on the same output directory does not re-generate existing `page_XXXX.txt` files by default.
+- Re-running the tool with existing output markers skips processing by default; forcing a run regenerates every page.
+- Files with identical stems and different extensions use distinct artifact folders and combined OCR outputs.
 - Missing OCR credentials causes a clear, actionable failure only for inputs routed to OCR.
 - When OCR requests fail for some pages, the tool completes the rest of the pages, reports failures, and exits non-zero.
