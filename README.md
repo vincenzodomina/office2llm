@@ -142,8 +142,8 @@ Actual folder processing asks for confirmation; an empty or fully processed sele
 Before confirmation, normal runs show the same table and path-list layout, listing
 only pending paths in green. Skipped paths are omitted, with their count in the table.
 Each conversion then shows **Proccessing:** and its input path on the next line.
-Afterward, **Processed:** shows the input path and a results table (`pages`,
-`ocr_ok`, `ocr_failed` for OCR, or `mode` for native Word), without output paths.
+Afterward, **Results:** titles a results table (`pages`, `ocr_ok`, `ocr_failed`
+for OCR, or `mode` for native Word), without repeating the path or adding an underline.
 Headings are bold in terminals, paths are green (red for failed conversions), and
 horizontal rules separate the path from the results. Batch totals use a table too.
 

@@ -165,8 +165,10 @@ class FolderProcessingTests(unittest.TestCase):
                         self.assertEqual(send.call_count, 2)
                         text = out.getvalue()
                         self.assertIn(f"Proccessing:\n{source.resolve()}\n", text)
-                        self.assertIn(f"Processed:\n{source.resolve()}\n", text)
-                        result = text.split("Processed:\n", 1)[1]
+                        self.assertNotIn("Processed:", text)
+                        result = text.split("Results:\n", 1)[1]
+                        self.assertTrue(result.startswith("+"))
+                        self.assertNotIn(str(source.resolve()), result)
                         self.assertRegex(result, r"\| pages\s+\| 2\s+\|")
                         self.assertRegex(result, r"\| ocr_ok\s+\| 2\s+\|")
                         self.assertRegex(result, r"\| ocr_failed\s+\| 0\s+\|")

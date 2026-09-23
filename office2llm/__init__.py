@@ -435,7 +435,7 @@ def process_document(
                 if input_path.suffix.lower() == ".doc"
                 else "pandoc"
             )
-            print_path_status("Processed:", input_path)
+            print(styled("Results:", "1"))
             print_table({"mode": mode})
             return 0
 
@@ -501,7 +501,7 @@ def process_document(
             tmp_path.write_text("\n\n".join(page_texts), encoding="utf-8")
             tmp_path.replace(final_txt_path)
 
-        print_path_status("Processed:", input_path, failed=bool(ocr_failed))
+        print(styled("Results:", "1"))
         print_table({"pages": str(pages), "ocr_ok": str(ocr_ok), "ocr_failed": str(ocr_failed)})
         return 0 if ocr_failed == 0 else 2
     finally:

@@ -192,9 +192,7 @@ The CLI prints a summary when done:
 Proccessing:
 /path/to/report.pdf
 ───────────────────
-Processed:
-/path/to/report.pdf
-───────────────────
+Results:
 +------------+---+
 | pages      | 8 |
 | ocr_ok     | 8 |
