@@ -134,6 +134,10 @@ Folder scans are non-recursive by default. Add `--recursive` to include subfolde
 `--extensions` accepts one or more supported extensions, case-insensitively and with
 or without a dot (`pdf`, `.PDF`, `docx`). Without it, all supported formats are selected.
 Dry runs list pending and skipped files without conversion, API calls, writes, or confirmation.
+The **Found Paths:** list shows one path per line between horizontal rules. In a
+terminal, pending paths are green and skipped paths are dim gray; a key/value table
+shows counts, filters, and output settings. Redirected output is plain text, and
+`NO_COLOR` disables terminal styling.
 Actual folder processing asks for confirmation; an empty or fully processed selection exits successfully.
 
 Output modes work identically for files and folders:

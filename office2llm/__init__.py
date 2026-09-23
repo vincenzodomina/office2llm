@@ -4,7 +4,9 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
+import textwrap
 import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -114,6 +116,38 @@ def discover_documents(
             and (Path(directory) / name).is_file()
         )
     return sorted(inputs)
+
+
+def print_dry_run(paths: list[tuple[Path, Path | None]], metadata: dict[str, str]) -> None:
+    color = sys.stdout.isatty() and "NO_COLOR" not in os.environ
+
+    def styled(text: str, code: str) -> str:
+        return f"\033[{code}m{text}\033[0m" if color else text
+
+    rule = "─" * min(
+        max([len("Found Paths:"), *(len(str(path)) for path, _ in paths)]),
+        shutil.get_terminal_size().columns,
+    )
+    print(styled("Found Paths:", "1"))
+    print(rule)
+    for path, existing in paths:
+        print(styled(str(path), "2;90" if existing is not None else "32"))
+    print(rule)
+    print()
+
+    key_width = max(len(key) for key in metadata)
+    value_width = min(
+        max(len(value) for value in metadata.values()),
+        max(20, shutil.get_terminal_size().columns - key_width - 7),
+    )
+    border = f"+-{'-' * key_width}-+-{'-' * value_width}-+"
+    print(border)
+    for key, value in metadata.items():
+        for index, line in enumerate(textwrap.wrap(value, width=value_width, break_on_hyphens=False)):
+            row = f"| {key if index == 0 else '':<{key_width}} | {line:<{value_width}} |"
+            print(styled(row, "32" if key == "Pending" else "2;90")
+                  if key in {"Pending", "Skipped"} else row)
+    print(border)
 
 
 def run_ocr(image: bytes | Path) -> str:
@@ -549,20 +583,38 @@ def main(argv: list[str] | None = None) -> int:
     )
     pending = []
     skipped = 0
+    found = []
     for doc_path in inputs:
         if doc_path.suffix.lower() not in extensions:
-            print(f"excluded input={doc_path} reason=extension")
+            if not args.dry_run:
+                print(f"excluded input={doc_path} reason=extension")
             continue
         existing = None if args.force_overwrite else processed_output(doc_path, outdir)
+        if args.dry_run:
+            found.append((doc_path, existing))
         if existing is not None:
             skipped += 1
-            print(f"skipped input={doc_path} existing={existing}")
+            if not args.dry_run:
+                print(f"skipped input={doc_path} existing={existing}")
         else:
             pending.append(doc_path)
-            if args.dry_run:
-                print(f"pending input={doc_path}")
-    if args.dry_run or not pending:
-        print(f"{'dry-run' if args.dry_run else 'batch'} pending={len(pending)} skipped={skipped}")
+    if args.dry_run:
+        print_dry_run(found, {
+            "Mode": "Dry run",
+            "Input": str(input_path),
+            "Recursive": "Yes" if args.recursive else "No",
+            "Extensions": ", ".join(sorted(extensions)) if args.extensions else "All supported",
+            "Force overwrite": "Yes" if args.force_overwrite else "No",
+            "OCR output": "<filename.ext>.txt beside input",
+            "Native output": str(outdir / "<stem>.md") if outdir else "<stem>.md beside input",
+            "Artifacts": "Not retained" if args.fulltext_only else str(outdir or "<filename.ext>__pages__/ beside input"),
+            "Pending": str(len(pending)),
+            "Skipped": str(skipped),
+            "Colors": "Pending: green; skipped: dim gray" if sys.stdout.isatty() and "NO_COLOR" not in os.environ else "Disabled (non-terminal or NO_COLOR)",
+        })
+        return 0
+    if not pending:
+        print(f"batch pending={len(pending)} skipped={skipped}")
         return 0
 
     if is_directory:
