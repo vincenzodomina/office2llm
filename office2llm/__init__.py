@@ -126,8 +126,7 @@ def styled(text: str, code: str) -> str:
 
 def print_path_status(title: str, path: Path, *, failed: bool = False) -> None:
     print(styled(title, "1"))
-    print(styled(str(path), "31" if failed else "32"))
-    print("─" * min(len(str(path)), shutil.get_terminal_size().columns), flush=True)
+    print(styled(str(path), "31" if failed else "32"), flush=True)
 
 
 def print_scan_summary(paths: list[tuple[Path, Path | None]], metadata: dict[str, str]) -> None:

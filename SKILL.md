@@ -191,7 +191,6 @@ The CLI prints a summary when done:
 ```
 Proccessing:
 /path/to/report.pdf
-───────────────────
 Results:
 | page: 8 | ocr_ok | 8 | ocr_failed | 0 |
 ```

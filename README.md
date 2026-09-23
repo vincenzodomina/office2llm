@@ -147,7 +147,7 @@ Afterward, **Results:** titles a compact OCR row such as
 an underline. Nonzero success counts are green, nonzero failure counts are red,
 and zero counts are dim gray. Native Word reports its conversion `mode` in a table.
 Headings are bold in terminals, paths are green (red for failed conversions), and
-horizontal rules separate the path from the results. Batch totals use a table too.
+no horizontal rule follows the processing path. Batch totals use a table too.
 
 Output modes work identically for files and folders:
 
